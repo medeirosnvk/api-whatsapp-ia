@@ -18,12 +18,11 @@ const mediaDir = path.join(__dirname, "media");
 const clientDataFile = path.join(__dirname, "clientData.json");
 
 const port = process.env.PORT || 3000;
-const environment = process.env.NODE_ENV;
 
 const app = express();
 
 const inicializarDiretorios = async () => {
-  if (!fs.existsSync(qrCodeDir)) {
+  if (!fs.existsSync(path.join(__dirname, "../qrcodes"))) {
     console.log("Diretório 'qrcodes' não existe, criando...");
     fs.mkdirSync(qrCodeDir);
   }
@@ -99,29 +98,6 @@ const httpServer = async () => {
   });
 };
 
-const httpsServer = async () => {
-  const privateKey = fs.readFileSync(
-    "/etc/letsencrypt/live/whatsapp.cobrance.online/privkey.pem",
-    "utf8"
-  );
-  const certificate = fs.readFileSync(
-    "/etc/letsencrypt/live/whatsapp.cobrance.online/fullchain.pem",
-    "utf8"
-  );
-  const ca = fs.readFileSync(
-    "/etc/letsencrypt/live/whatsapp.cobrance.online/chain.pem",
-    "utf8"
-  );
-  const credentials = { key: privateKey, cert: certificate, ca };
-  const httpsServer = https.createServer(credentials, app);
-
-  httpsServer.listen(port, async () => {
-    console.log(`Servidor HTTPS iniciado na porta ${port}`);
-
-    restoreAllSessions();
-  });
-};
-
 const iniciarServer = async () => {
   app.use(cors());
   app.use(express.json({ limit: "50mb" }));
@@ -133,11 +109,7 @@ const iniciarServer = async () => {
 
   setupSwagger(app);
 
-  if (environment === "production") {
-    httpsServer();
-  } else {
-    httpServer();
-  }
+  httpServer();
 };
 
 inicializarDiretorios();

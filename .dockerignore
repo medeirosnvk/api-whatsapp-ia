@@ -1,0 +1,17 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+
+# Node
+node_modules
+npm-debug.log
+
+# Documentação e dados de tempo de execução (devem ser volumes)
+README.md
+.wwebjs_auth
+.wwebjs_cache
+clientData.json
+qrcodes

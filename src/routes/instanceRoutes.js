@@ -2,14 +2,31 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 
-const { createSession } = require("../services/InstanceServices/createSessionService");
-const { disconnectSession } = require("../services/InstanceServices/disconnectSessionService");
-const { disconnectAllSessions } = require("../services/InstanceServices/disconnectAllSessionsService");
-const { restoreAllSessions } = require("../services/InstanceServices/restoreAllSessionsService");
-const { restoreSession } = require("../services/InstanceServices/restoreSessionService");
-const { deleteSession } = require("../services/InstanceServices/deleteSessionService");
-const { deleteUnusedSessions } = require("../services/InstanceServices/deleteUnusedSessionsService");
+const {
+  createSession,
+} = require("../services/InstanceServices/createSessionService");
+const {
+  disconnectSession,
+} = require("../services/InstanceServices/disconnectSessionService");
+const {
+  disconnectAllSessions,
+} = require("../services/InstanceServices/disconnectAllSessionsService");
+const {
+  restoreAllSessions,
+} = require("../services/InstanceServices/restoreAllSessionsService");
+const {
+  restoreSession,
+} = require("../services/InstanceServices/restoreSessionService");
+const {
+  deleteSession,
+} = require("../services/InstanceServices/deleteSessionService");
+const {
+  deleteUnusedSessions,
+} = require("../services/InstanceServices/deleteUnusedSessionsService");
 const sessionsManager = require("../services/sessionsManager");
+const {
+  createInstanceController,
+} = require("../controllers/instanceController");
 
 const instanceRoutes = express.Router();
 
@@ -39,17 +56,7 @@ const clientDataDir = path.join(__dirname, "../../clientData.json");
  *       500:
  *         description: Erro ao criar a sessão.
  */
-instanceRoutes.post("/instance/create", async (req, res) => {
-  const { instanceName } = req.body;
-
-  try {
-    await createSession(instanceName);
-    res.status(200).json({ message: `Sessão ${instanceName} criada com sucesso.` });
-  } catch (error) {
-    console.error("Erro ao criar sessão:", error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
+instanceRoutes.post("/instance/create", createInstanceController);
 
 /**
  * @swagger
@@ -208,21 +215,24 @@ instanceRoutes.delete("/instance/logoutAll", async (req, res) => {
  *       500:
  *         description: Erro ao excluir a sessão.
  */
-instanceRoutes.delete("/instance/deleteSession/:sessionName", async (req, res) => {
-  const sessionName = req.params.sessionName;
+instanceRoutes.delete(
+  "/instance/deleteSession/:sessionName",
+  async (req, res) => {
+    const sessionName = req.params.sessionName;
 
-  try {
-    const result = deleteSession(sessionName);
-    if (result.success) {
-      res.status(200).json(result.success);
-    } else {
-      res.status(404).json(result.error);
+    try {
+      const result = deleteSession(sessionName);
+      if (result.success) {
+        res.status(200).json(result.success);
+      } else {
+        res.status(404).json(result.error);
+      }
+    } catch (error) {
+      console.error("Erro ao tentar excluir a sessão:", error);
+      res.status(500).json("Erro ao tentar excluir a sessão.");
     }
-  } catch (error) {
-    console.error("Erro ao tentar excluir a sessão:", error);
-    res.status(500).json("Erro ao tentar excluir a sessão.");
   }
-});
+);
 
 /**
  * @swagger
@@ -261,7 +271,9 @@ instanceRoutes.get("/instance/listFolders", async (req, res) => {
 
   if (fs.existsSync(authDir)) {
     const sessionFolders = fs.readdirSync(authDir);
-    const instanceNames = sessionFolders.map((sessionFolder) => sessionFolder.replace("session-", ""));
+    const instanceNames = sessionFolders.map((sessionFolder) =>
+      sessionFolder.replace("session-", "")
+    );
     console.log({ instances: instanceNames });
     res.json({ instances: instanceNames });
   } else {
@@ -304,7 +316,10 @@ instanceRoutes.get("/instance/fetchInstances", async (req, res) => {
       console.log({ instances });
       res.json(instances); // Enviar resposta JSON com as instâncias encontradas
     } catch (error) {
-      console.error("Erro ao ler ou analisar o arquivo clientData.json:", error);
+      console.error(
+        "Erro ao ler ou analisar o arquivo clientData.json:",
+        error
+      );
       res.status(500).json({ error: "Erro interno do servidor" });
     }
   } else {
@@ -350,7 +365,10 @@ instanceRoutes.get("/instance/fetchAllInstances", async (req, res) => {
       console.log({ instances });
       res.json(instances); // Enviar resposta JSON com as instâncias encontradas
     } catch (error) {
-      console.error("Erro ao ler ou analisar o arquivo clientData.json:", error);
+      console.error(
+        "Erro ao ler ou analisar o arquivo clientData.json:",
+        error
+      );
       res.status(500).json({ error: "Erro interno do servidor" });
     }
   } else {
@@ -415,39 +433,47 @@ instanceRoutes.get("/instance/getAllSessions", async (req, res) => {
  *       500:
  *         description: Erro ao buscar estado da conexão.
  */
-instanceRoutes.get("/instance/connectionState/:instanceName", async (req, res) => {
-  const { instanceName } = req.params;
+instanceRoutes.get(
+  "/instance/connectionState/:instanceName",
+  async (req, res) => {
+    const { instanceName } = req.params;
 
-  try {
-    const session = sessionsManager.getSession(instanceName);
+    try {
+      const session = sessionsManager.getSession(instanceName);
 
-    if (!session) {
-      console.error(`Sessão "${instanceName}" não encontrada.`);
-      return res.status(404).json({
-        error: "Instance not found",
+      if (!session) {
+        console.error(`Sessão "${instanceName}" não encontrada.`);
+        return res.status(404).json({
+          error: "Instance not found",
+          instanceName,
+        });
+      }
+
+      if (!session.client) {
+        console.warn(
+          `Cliente não inicializado para a sessão "${instanceName}".`
+        );
+        return res.status(500).json({
+          error: "Client not initialized",
+          instanceName,
+        });
+      }
+
+      return res.json({
         instanceName,
+        state: session.client.connectionState,
       });
-    }
-
-    if (!session.client) {
-      console.warn(`Cliente não inicializado para a sessão "${instanceName}".`);
+    } catch (error) {
+      console.error(
+        `Erro ao buscar estado da conexão para a instância "${instanceName}":`,
+        error
+      );
       return res.status(500).json({
-        error: "Client not initialized",
-        instanceName,
+        error: "Internal Server Error",
+        details: error.message,
       });
     }
-
-    return res.json({
-      instanceName,
-      state: session.client.connectionState,
-    });
-  } catch (error) {
-    console.error(`Erro ao buscar estado da conexão para a instância "${instanceName}":`, error);
-    return res.status(500).json({
-      error: "Internal Server Error",
-      details: error.message,
-    });
   }
-});
+);
 
 module.exports = instanceRoutes;

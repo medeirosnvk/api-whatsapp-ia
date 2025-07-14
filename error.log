@@ -1,0 +1,2 @@
+Rejeição de Promessa Não Tratada: ProtocolError: Protocol error (Network.getResponseBody): Target closed.
+Rejeição de Promessa Não Tratada: Error: Protocol error (Runtime.callFunctionOn): Session closed. Most likely the page has been closed.

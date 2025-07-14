@@ -6,7 +6,7 @@ const { getAllFiles } = require("../services/FileServices/getAllFilesService");
 const mediaDataPath = path.join(__dirname, "../media");
 const urlWebhookMedia = process.env.URL_WEBHOOK_MEDIA;
 
-export const listAllFilesController = async (req, res) => {
+const listAllFilesController = async (req, res) => {
   try {
     if (!fs.existsSync(mediaDataPath)) {
       console.error(`Diretório ${mediaDataPath} não existe`);
@@ -37,4 +37,8 @@ export const listAllFilesController = async (req, res) => {
     console.error("Erro ao ler o diretório", error);
     res.status(500).json({ error: "Erro ao tentar ler o diretório" });
   }
+};
+
+module.exports = {
+  listAllFilesController,
 };

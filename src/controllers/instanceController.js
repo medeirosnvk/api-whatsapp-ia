@@ -22,9 +22,8 @@ const {
 const {
   deleteUnusedSessions,
 } = require("../services/InstanceServices/deleteUnusedSessionsService");
-const sessionsManager = require("../services/sessionsManager");
 
-export const createInstanceController = async (req, res) => {
+const createInstanceController = async (req, res) => {
   const { instanceName } = req.body;
 
   try {
@@ -36,4 +35,8 @@ export const createInstanceController = async (req, res) => {
     console.error("Erro ao criar sessão:", error.message);
     res.status(500).json({ error: error.message });
   }
+};
+
+module.exports = {
+  createInstanceController,
 };

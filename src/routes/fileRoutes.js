@@ -1,5 +1,6 @@
 const express = require("express");
-const { listAllFilesController } = require("../controllers/fileControllers");
+const path = require("path");
+const { listAllFilesController } = require("../controllers/fileController");
 
 const mediaDataPath = path.join(__dirname, "../media");
 
