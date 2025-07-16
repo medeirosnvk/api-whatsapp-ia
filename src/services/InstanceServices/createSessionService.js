@@ -4,7 +4,7 @@ const { saveQRCodeImage } = require("./saveQRCodeImageService");
 const saveClientDataService = require("../../services/InstanceServices/saveClientDataService");
 const sessionsManager = require("../../services/sessionsManager");
 const qrcode = require("qrcode-terminal");
-const axios = require("axios");
+const { sendToGemini } = require("../IAServices/geminiService");
 
 const sessoesAtivas = new Set();
 const usuariosAtendidos = new Set();
@@ -178,16 +178,6 @@ const createSession = async (sessionName) => {
       if (userId.endsWith("@g.us")) return;
       if (userId !== numeroRespostaIA) return;
 
-      const promptInicial = `
-        Você é um atendente virtual inteligente da empresa Cobrance Recuperadora de crédito.
-        Sua tarefa é perguntar os dados do usuario como cpfcnpj para posteriormente buscar os dados do cliente e retornar informacoes sobre pendencias financeiras.
-        Endpoint pata buscar os dados do cliente apos recebimento do documento do cliente.
-        Endpoint: https://api.cobrance.online:3030/lista-credores?documento={cpfcnpj}
-        Em posse destes dados, informe o cliente o valor da divida=saldo.
-        Responda sempre de forma clara e sucinta com textos curtos, amigável e profissional.
-        Nunca diga que você é uma IA.
-      `;
-
       // Envia mensagem de boas-vindas apenas uma vez por usuário
       if (!usuariosAtendidos.has(userId)) {
         await message.reply(
@@ -196,39 +186,11 @@ const createSession = async (sessionName) => {
         usuariosAtendidos.add(userId);
       }
 
-      try {
-        // Aguarda 10 segundos antes de responder
-        // await new Promise((resolve) => setTimeout(resolve, 10000));
+      // Chama a IA Gemini
+      const geminiResponse = await sendToGemini(userMessage);
 
-        const response = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKeyGemini}`,
-          {
-            contents: [
-              { role: "user", parts: [{ text: promptInicial }] },
-              { role: "user", parts: [{ text: userMessage }] },
-            ],
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        const respostaIA =
-          response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (respostaIA) {
-          await message.reply(respostaIA);
-        } else {
-          await message.reply("Desculpe, não consegui entender sua mensagem.");
-        }
-      } catch (err) {
-        console.error(
-          "Erro ao consultar Gemini API:",
-          err?.response?.data || err.message
-        );
-      }
+      // Response ao usuário
+      await client.sendMessage(userId, geminiResponse.message);
     });
 
     await client.initialize();

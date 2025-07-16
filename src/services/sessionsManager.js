@@ -1,6 +1,8 @@
 /* eslint-disable indent */
 /* eslint-disable no-unused-vars */
-const sessions = new Map(); // Armazena as informações das sessões
+const redisClient = require("../config/cache/redisClient"); // importa seu cliente Redis
+
+const SESSION_PREFIX = "wa-session:";
 
 // Utilitário para obter o horário do servidor com fuso horário
 const getServerDateTime = (timezone = "America/Sao_Paulo") => {
@@ -9,42 +11,66 @@ const getServerDateTime = (timezone = "America/Sao_Paulo") => {
 
 module.exports = {
   /**
-   * Adiciona uma nova sessão ao gerenciador.
-   * @param {string} sessionName - Nome da sessão.
-   * @param {object} client - Objeto do cliente WhatsApp.
-   * @param {object} additionalData - Dados adicionais para a sessão.
+   * Adiciona uma nova sessão ao Redis.
+   * @param {string} sessionName
+   * @param {object} client
+   * @param {object} additionalData
    */
-  addSession: (sessionName, client, additionalData = {}) => {
-    sessions.set(sessionName, {
-      client,
-      connectionState: "connecting", // Estado inicial
+  addSession: async (sessionName, client, additionalData = {}) => {
+    const sessionData = {
+      connectionState: "connecting",
       connectionDateTime: getServerDateTime(),
       ...additionalData,
-    });
+    };
+
+    // salva `client` separadamente na memória se necessário (evita serializar funções)
+    sessionData._clientStoredSeparately = true;
+
+    await redisClient.set(
+      SESSION_PREFIX + sessionName,
+      JSON.stringify(sessionData)
+    );
+
+    // armazena o client apenas em memória local (caso queira)
+    redisClient.clients = redisClient.clients || {};
+    redisClient.clients[sessionName] = client;
   },
 
   /**
-   * Retorna os dados de uma sessão pelo nome.
-   * @param {string} sessionName - Nome da sessão.
-   * @returns {object|null} - Dados da sessão ou null se não encontrada.
+   * Retorna os dados da sessão.
+   * @param {string} sessionName
+   * @returns {object|null}
    */
-  getSession: (sessionName) => {
-    if (!sessions.has(sessionName)) {
+  getSession: async (sessionName) => {
+    const data = await redisClient.get(SESSION_PREFIX + sessionName);
+    if (!data) {
       console.error(`Sessão "${sessionName}" não encontrada.`);
       return null;
     }
-    return sessions.get(sessionName);
+
+    const session = JSON.parse(data);
+
+    // restaura client da memória se armazenado
+    if (session._clientStoredSeparately && redisClient.clients) {
+      session.client = redisClient.clients[sessionName];
+    }
+
+    return session;
   },
 
   /**
-   * Retorna todas as sessões armazenadas no gerenciador.
-   * @returns {Array} - Lista de todas as sessões com dados relevantes.
+   * Lista todas as sessões armazenadas no Redis.
    */
-  getAllSessions: () => {
-    return Array.from(sessions.entries()).map(([sessionName, sessionData]) => {
-      const { client, ...safeData } = sessionData;
+  getAllSessions: async () => {
+    const keys = await redisClient.keys(SESSION_PREFIX + "*");
+    const sessions = [];
 
-      // Verifica se o client e info estão presentes
+    for (const key of keys) {
+      const sessionName = key.replace(SESSION_PREFIX, "");
+      const data = await redisClient.get(key);
+      const session = JSON.parse(data);
+
+      const client = redisClient.clients?.[sessionName];
       const clientInfo = client?.info
         ? {
             pushname: client.info.pushname,
@@ -52,55 +78,69 @@ module.exports = {
           }
         : null;
 
-      return {
+      sessions.push({
         sessionName,
-        connectionState: client.connectionState, // Retorna sessionName e connectionState
-        info: clientInfo, // Inclui os dados de info, se existirem
-        connectionDateTime: client.connectionDateTime,
-      };
-    });
+        connectionState: session.connectionState,
+        info: clientInfo,
+        connectionDateTime: session.connectionDateTime,
+      });
+    }
+
+    return sessions;
   },
 
   /**
-   * Atualiza os dados de uma sessão existente.
-   * @param {string} sessionName - Nome da sessão.
-   * @param {object} updates - Dados a serem atualizados.
-   * @throws {Error} - Se a sessão não for encontrada.
+   * Atualiza uma sessão existente no Redis.
+   * @param {string} sessionName
+   * @param {object} updates
    */
-  updateSession: (sessionName, updates) => {
+  updateSession: async (sessionName, updates) => {
     console.log("Atualizando sessão:", sessionName);
 
-    const session = sessions.get(sessionName);
-
-    if (!session) {
+    const currentData = await module.exports.getSession(sessionName);
+    if (!currentData) {
       throw new Error(`Sessão "${sessionName}" não encontrada.`);
     }
 
     if (updates.client) {
-      if (session.client !== updates.client) {
-        session.client = updates.client;
+      if (redisClient.clients?.[sessionName] !== updates.client) {
+        redisClient.clients[sessionName] = updates.client;
       } else {
-        console.warn(`O objeto \`client\` para a sessão "${sessionName}" já está atualizado.`);
+        console.warn(
+          `O objeto \`client\` para a sessão "${sessionName}" já está atualizado.`
+        );
       }
-      delete updates.client; // Remove o `client` de updates após lidar com ele
+      delete updates.client;
     }
 
-    sessions.set(sessionName, {
-      ...session,
+    const updatedData = {
+      ...currentData,
       ...updates,
       connectionDateTime: getServerDateTime(),
-    });
+    };
+
+    await redisClient.set(
+      SESSION_PREFIX + sessionName,
+      JSON.stringify(updatedData)
+    );
   },
 
   /**
-   * Remove uma sessão do gerenciador.
-   * @param {string} sessionName - Nome da sessão.
+   * Remove uma sessão do Redis.
+   * @param {string} sessionName
    */
-  removeSession: (sessionName) => {
-    if (!sessions.has(sessionName)) {
-      console.warn(`Tentativa de remover sessão inexistente: "${sessionName}".`);
+  removeSession: async (sessionName) => {
+    const exists = await redisClient.exists(SESSION_PREFIX + sessionName);
+    if (!exists) {
+      console.warn(
+        `Tentativa de remover sessão inexistente: "${sessionName}".`
+      );
       return;
     }
-    sessions.delete(sessionName);
+
+    await redisClient.del(SESSION_PREFIX + sessionName);
+    if (redisClient.clients) {
+      delete redisClient.clients[sessionName];
+    }
   },
 };
