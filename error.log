@@ -1,2 +1,13 @@
 Rejeição de Promessa Não Tratada: ProtocolError: Protocol error (Network.getResponseBody): Target closed.
 Rejeição de Promessa Não Tratada: Error: Protocol error (Runtime.callFunctionOn): Session closed. Most likely the page has been closed.
+Rejeição de Promessa Não Tratada: TypeError: Cannot read properties of null (reading 'close')
+Rejeição de Promessa Não Tratada: TypeError: Converting circular structure to JSON
+    --> starting at object with constructor 'Client'
+    |     property 'options' -> object with constructor 'Object'
+    |     property 'authStrategy' -> object with constructor 'LocalAuth'
+    --- property 'client' closes the circle
+Rejeição de Promessa Não Tratada: TypeError: Converting circular structure to JSON
+    --> starting at object with constructor 'Client'
+    |     property 'options' -> object with constructor 'Object'
+    |     property 'authStrategy' -> object with constructor 'LocalAuth'
+    --- property 'client' closes the circle

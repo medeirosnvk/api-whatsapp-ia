@@ -1,36 +1,67 @@
 const axios = require("axios");
 const inicitalSystemPrompt = require("./geminiInitialPrompt");
-const getListaCredores = require("../../utils/requests");
+const { getListaCredores, getOfertasCredor } = require("../../utils/requests");
 const apiKeyGemini = process.env.GEMINI_API_KEY;
 
-function formatCpfCnpj(text) {
-  const cleaned = text.replace(/\D/g, "");
-  if (cleaned.length === 11 || cleaned.length === 14) {
-    return cleaned;
+function extractCpfCnpjFromText(text) {
+  const matches = text.match(/\d{11}|\d{14}/g);
+  if (!matches) return null;
+
+  for (const match of matches) {
+    if (match.length === 11 || match.length === 14) {
+      return match;
+    }
   }
+
   return null;
 }
 
 async function sendToGemini(userMessage, context = []) {
-  const documento = formatCpfCnpj(userMessage);
+  const documento = extractCpfCnpjFromText(userMessage);
   let externalData = null;
+  let devedorSelecionado = null;
 
   if (documento) {
     try {
       externalData = await getListaCredores(documento);
-      console.log("Dados encontrados na API:", externalData);
-
       context.push({
         role: "user",
-        parts: [`Dados encontrados na API:\n${JSON.stringify(externalData)}`],
+        parts: [
+          {
+            text: `Dados encontrados na API:\n${JSON.stringify(externalData)}`,
+          },
+        ],
       });
     } catch (error) {
       console.error("Erro ao buscar dados da API:", error.message);
-
       context.push({
         role: "user",
-        parts: [`Não foi possível buscar os dados do CPF/CNPJ informado.`],
+        parts: [
+          { text: `Não foi possível buscar os dados do CPF/CNPJ informado.` },
+        ],
       });
+    }
+  }
+
+  if (externalData?.length > 1) {
+    const match = userMessage.match(/\b[1-9][0-9]?\b/); // pega números de 1 a 99
+    if (match) {
+      const index = parseInt(match[0], 10) - 1;
+      if (externalData[index]) {
+        devedorSelecionado = externalData[index];
+        const ofertas = await getOfertasCredor(devedorSelecionado.iddevedor);
+
+        context.push({
+          role: "user",
+          parts: [
+            {
+              text: `Ofertas para o devedor ${
+                devedorSelecionado.nome
+              }:\n${JSON.stringify(ofertas)}`,
+            },
+          ],
+        });
+      }
     }
   }
 

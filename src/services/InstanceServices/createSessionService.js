@@ -172,19 +172,11 @@ const createSession = async (sessionName) => {
     client.on("message", async (message) => {
       const userId = message.from;
       const userMessage = message.body;
-      const numeroRespostaIA = "555180307836@c.us";
+      const numeroRespostaIA = "555192261797@c.us";
 
       if (message.fromMe) return;
       if (userId.endsWith("@g.us")) return;
       if (userId !== numeroRespostaIA) return;
-
-      // Envia mensagem de boas-vindas apenas uma vez por usuário
-      if (!usuariosAtendidos.has(userId)) {
-        await message.reply(
-          "Olá! Obrigado pelo seu contato com a Cobrance. Estou aqui para te ajudar com a sua negociação ou demais dúvidas."
-        );
-        usuariosAtendidos.add(userId);
-      }
 
       // Chama a IA Gemini
       const geminiResponse = await sendToGemini(userMessage);

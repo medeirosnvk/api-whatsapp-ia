@@ -1,8 +1,13 @@
 /* eslint-disable indent */
 /* eslint-disable no-unused-vars */
-const redisClient = require("../config/cache/redisClient"); // importa seu cliente Redis
+const redisClient = require("../config/cache/redisClient");
 
 const SESSION_PREFIX = "wa-session:";
+
+// Garante que redisClient.clients esteja inicializado
+if (!redisClient.clients) {
+  redisClient.clients = {};
+}
 
 // Utilitário para obter o horário do servidor com fuso horário
 const getServerDateTime = (timezone = "America/Sao_Paulo") => {
@@ -21,18 +26,15 @@ module.exports = {
       connectionState: "connecting",
       connectionDateTime: getServerDateTime(),
       ...additionalData,
+      _clientStoredSeparately: true, // marca que client foi separado
     };
-
-    // salva `client` separadamente na memória se necessário (evita serializar funções)
-    sessionData._clientStoredSeparately = true;
 
     await redisClient.set(
       SESSION_PREFIX + sessionName,
       JSON.stringify(sessionData)
     );
 
-    // armazena o client apenas em memória local (caso queira)
-    redisClient.clients = redisClient.clients || {};
+    // armazena o client em memória local
     redisClient.clients[sessionName] = client;
   },
 
@@ -50,7 +52,7 @@ module.exports = {
 
     const session = JSON.parse(data);
 
-    // restaura client da memória se armazenado
+    // restaura client da memória
     if (session._clientStoredSeparately && redisClient.clients) {
       session.client = redisClient.clients[sessionName];
     }
@@ -60,6 +62,7 @@ module.exports = {
 
   /**
    * Lista todas as sessões armazenadas no Redis.
+   * @returns {Array}
    */
   getAllSessions: async () => {
     const keys = await redisClient.keys(SESSION_PREFIX + "*");
@@ -102,14 +105,9 @@ module.exports = {
       throw new Error(`Sessão "${sessionName}" não encontrada.`);
     }
 
+    // Se estiver atualizando o client, armazena apenas em memória
     if (updates.client) {
-      if (redisClient.clients?.[sessionName] !== updates.client) {
-        redisClient.clients[sessionName] = updates.client;
-      } else {
-        console.warn(
-          `O objeto \`client\` para a sessão "${sessionName}" já está atualizado.`
-        );
-      }
+      redisClient.clients[sessionName] = updates.client;
       delete updates.client;
     }
 
@@ -117,12 +115,20 @@ module.exports = {
       ...currentData,
       ...updates,
       connectionDateTime: getServerDateTime(),
+      _clientStoredSeparately: true,
     };
 
-    await redisClient.set(
-      SESSION_PREFIX + sessionName,
-      JSON.stringify(updatedData)
-    );
+    // Protege contra erro de estrutura circular
+    let safeData;
+    try {
+      safeData = JSON.stringify(updatedData);
+    } catch (err) {
+      console.error("Erro ao serializar sessão para o Redis:", err.message);
+      const { client, ...rest } = updatedData;
+      safeData = JSON.stringify(rest);
+    }
+
+    await redisClient.set(SESSION_PREFIX + sessionName, safeData);
   },
 
   /**
@@ -139,8 +145,6 @@ module.exports = {
     }
 
     await redisClient.del(SESSION_PREFIX + sessionName);
-    if (redisClient.clients) {
-      delete redisClient.clients[sessionName];
-    }
+    delete redisClient.clients[sessionName];
   },
 };
