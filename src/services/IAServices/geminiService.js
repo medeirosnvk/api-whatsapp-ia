@@ -16,19 +16,40 @@ function extractCpfCnpjFromText(text) {
   return null;
 }
 
+function extractNumberFromText(text) {
+  const matches = text.match(/\b[1-9][0-9]?\b/);
+  if (!matches) return null;
+
+  for (const match of matches) {
+    if (!isNaN(match)) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+const data = { listaCredores: [], credorSelecionado: [], ofertas: [] };
+
 async function sendToGemini(userMessage, context = []) {
+  let iddevedor;
   const documento = extractCpfCnpjFromText(userMessage);
-  let externalData = null;
-  let devedorSelecionado = null;
+  const match = extractNumberFromText(userMessage);
 
   if (documento) {
+    console.log("ENTROU EM DOCUMENTO");
+
     try {
-      externalData = await getListaCredores(documento);
+      data.listaCredores = await getListaCredores(documento);
+      console.log("data.listaCredores -", data.listaCredores);
+
       context.push({
         role: "user",
         parts: [
           {
-            text: `Dados encontrados na API:\n${JSON.stringify(externalData)}`,
+            text: `Dados encontrados na API:\n${JSON.stringify(
+              data.listaCredores
+            )}`,
           },
         ],
       });
@@ -43,26 +64,57 @@ async function sendToGemini(userMessage, context = []) {
     }
   }
 
-  if (externalData?.length > 1) {
-    const match = userMessage.match(/\b[1-9][0-9]?\b/); // pega números de 1 a 99
-    if (match) {
-      const index = parseInt(match[0], 10) - 1;
-      if (externalData[index]) {
-        devedorSelecionado = externalData[index];
-        const ofertas = await getOfertasCredor(devedorSelecionado.iddevedor);
+  if (match) {
+    console.log("ENTROU EM MATH");
+    const index = parseInt(match[0], 10) - 1;
+    console.log("index -", index);
+    console.log("data.listaCredores -", data.listaCredores);
+    let devedor;
 
-        context.push({
-          role: "user",
-          parts: [
-            {
-              text: `Ofertas para o devedor ${
-                devedorSelecionado.nome
-              }:\n${JSON.stringify(ofertas)}`,
-            },
-          ],
-        });
-      }
+    if (!isNaN(index) && index >= 0 && index < data.listaCredores.length) {
+      devedor = data.listaCredores[index];
+      console.log("Devedor selecionado:", devedor);
+    } else {
+      console.log("Índice inválido. Nenhum devedor correspondente.");
     }
+
+    if (devedor) {
+      data.credorSelecionado = devedor;
+      iddevedor = data.credorSelecionado.iddevedor;
+      console.log("data.credorSelecionado -", data.credorSelecionado);
+
+      const ofertas = await getOfertasCredor(data.credorSelecionado.iddevedor);
+      data.ofertas = ofertas;
+      console.log("ofertas -", data.ofertas);
+
+      context.push({
+        role: "user",
+        parts: [
+          {
+            text: `Ofertas disponiveis para o credor selecionado ${
+              data.credorSelecionado.nome
+            } e iddevedor ${
+              data.credorSelecionado.iddevedor
+            }:\n${JSON.stringify(ofertas)}`,
+          },
+        ],
+      });
+    } else {
+      context.push({
+        role: "user",
+        parts: [{ text: "Número inválido. Escolha um devedor válido." }],
+      });
+    }
+  }
+
+  if (
+    userMessage.match(/(quero|desejo|gostaria).*?(negociar|parcelar|resolver)/i)
+  ) {
+    return {
+      message:
+        "Ótimo! Para iniciarmos a negociação, por favor, envie seu CPF ou CNPJ.",
+      context,
+    };
   }
 
   const payload = {
@@ -97,9 +149,9 @@ async function sendToGemini(userMessage, context = []) {
     return {
       message: text,
       context,
-      api: !!documento && !!externalData,
+      api: !!documento && !!data.listaCredores,
       intent: documento ? "dados_cliente" : null,
-      params: documento ? { documento, dados: externalData } : null,
+      params: documento ? { documento, dados: data.listaCredores } : null,
     };
   } catch (err) {
     console.error("Erro ao enviar mensagem para Gemini:", err.message);
