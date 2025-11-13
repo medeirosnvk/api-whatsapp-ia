@@ -187,11 +187,19 @@ const createSession = async (sessionName) => {
 
       console.log(`Mensagem recebida de ${userId}: ${userMessage}`);
 
-      // Chama a IA Gemini
-      const geminiResponse = await sendToGemini(userMessage);
+      try {
+        // Chama a IA Gemini com o userId para gerenciar contexto por usuário
+        const geminiResponse = await sendToGemini(userId, userMessage);
 
-      // Response ao usuário
-      await client.sendMessage(userId, geminiResponse.message);
+        // Response ao usuário
+        await client.sendMessage(userId, geminiResponse.message);
+      } catch (error) {
+        console.error(`Erro ao processar mensagem de ${userId}:`, error);
+        await client.sendMessage(
+          userId,
+          "Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente."
+        );
+      }
     });
 
     await client.initialize();
