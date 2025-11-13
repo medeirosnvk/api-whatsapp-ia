@@ -1,6 +1,7 @@
 const axios = require("axios");
 const inicitalSystemPrompt = require("./geminiInitialPrompt");
 const { getListaCredores, getOfertasCredor } = require("../../utils/requests");
+const verificarIntencao = require("./verifyIntention");
 const apiKeyGemini = process.env.GEMINI_API_KEY;
 
 function extractCpfCnpjFromText(text) {

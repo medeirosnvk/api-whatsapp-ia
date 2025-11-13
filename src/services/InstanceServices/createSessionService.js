@@ -62,13 +62,20 @@ const createSession = async (sessionName) => {
       connectionState: "connecting",
     });
 
-    const qrTimeout = setTimeout(() => {
+    const qrTimeout = setTimeout(async () => {
       if (client.connectionState !== "open") {
         client.connectionState = "disconnected";
         console.log(
           `Tempo esgotado para a sessão ${sessionName}. Desconectando...`
         );
-        client.destroy();
+        try {
+          await client.destroy();
+        } catch (destroyError) {
+          console.error(
+            `Erro ao destruir cliente de ${sessionName}:`,
+            destroyError.message
+          );
+        }
         sessionsManager.removeSession(sessionName);
       }
     }, 2 * 60 * 1000);
@@ -178,6 +185,8 @@ const createSession = async (sessionName) => {
       if (userId.endsWith("@g.us")) return;
       if (userId !== numeroRespostaIA) return;
 
+      console.log(`Mensagem recebida de ${userId}: ${userMessage}`);
+
       // Chama a IA Gemini
       const geminiResponse = await sendToGemini(userMessage);
 
@@ -189,7 +198,7 @@ const createSession = async (sessionName) => {
 
     return client;
   } catch (error) {
-    console.error(`Erro ao criar a sessão ${sessionName}:`, error);
+    console.error(`Erro na sessão ${sessionName}:`, error);
     sessionsManager.removeSession(sessionName);
   }
 };

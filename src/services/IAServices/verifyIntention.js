@@ -1,4 +1,4 @@
-function verificarIntencao(userMessage) {
+async function verificarIntencao(userMessage) {
   const texto = userMessage.toLowerCase();
 
   // Intenção: Início de negociação

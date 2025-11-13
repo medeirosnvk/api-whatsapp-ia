@@ -100,9 +100,7 @@ module.exports = {
    */
   removeSession: (sessionName) => {
     if (!sessions.has(sessionName)) {
-      console.warn(
-        `Tentativa de remover sessão inexistente: "${sessionName}".`
-      );
+      console.warn(`Tentativa de remover sessão falhou: "${sessionName}".`);
       return;
     }
     sessions.delete(sessionName);

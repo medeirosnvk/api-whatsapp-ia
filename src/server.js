@@ -13,34 +13,49 @@ const {
   restoreAllSessions,
 } = require("../src/services/InstanceServices/restoreAllSessionsService");
 
-const qrCodeDir = path.join(__dirname, "qrcodes");
-const mediaDir = path.join(__dirname, "media");
-const clientDataFile = path.join(__dirname, "clientData.json");
+const qrCodeDir = path.join(__dirname, "../temp/qrcodes");
+const mediaDir = path.join(__dirname, "../temp/media");
+const clientDataFile = path.join(__dirname, "../temp/clientData.json");
 
 const port = process.env.PORT || 3000;
 
 const app = express();
 
 const inicializarDiretorios = async () => {
-  if (!fs.existsSync(path.join(__dirname, "../qrcodes"))) {
+  // Certifique-se de que o diretório qrcodes na raiz do projeto exista
+  if (!fs.existsSync(qrCodeDir)) {
     console.log("Diretório 'qrcodes' não existe, criando...");
-    fs.mkdirSync(qrCodeDir);
+    fs.mkdirSync(qrCodeDir, { recursive: true });
   }
 
+  // Diretório de mídia local dentro de src
   if (!fs.existsSync(mediaDir)) {
     console.log("Diretório 'media' não existe, criando...");
-    fs.mkdirSync(mediaDir);
+    fs.mkdirSync(mediaDir, { recursive: true });
   }
 };
 
 const carregarSessoes = async () => {
+  // sessions é um objeto que mantém o estado carregado de clientDataFile
+  let sessions = {};
   if (fs.existsSync(clientDataFile)) {
-    sessions = JSON.parse(fs.readFileSync(clientDataFile, "utf8"));
-    Object.keys(sessions).forEach((instanceName) => {
-      sessions[instanceName].connectionState = "disconnected";
-    });
-    console.log("Diretório 'media' não existe, criando...");
+    try {
+      sessions = JSON.parse(fs.readFileSync(clientDataFile, "utf8"));
+      Object.keys(sessions).forEach((instanceName) => {
+        sessions[instanceName].connectionState = "disconnected";
+      });
+      // Atualiza o arquivo com os estados ajustados
+      fs.writeFileSync(clientDataFile, JSON.stringify(sessions, null, 2));
+      console.log(
+        "Arquivo clientData.json carregado e atualizado com estados 'disconnected'."
+      );
+    } catch (err) {
+      console.error("Erro ao carregar clientData.json:", err.message);
+    }
+  } else {
+    // Se não existir, cria um arquivo vazio para evitar leituras futuras falhas
     fs.writeFileSync(clientDataFile, JSON.stringify(sessions, null, 2));
+    console.log("Arquivo clientData.json não existe, criando...");
   }
 };
 
@@ -81,20 +96,49 @@ const lidarErrosRejeicao = async (reason) => {
 const configurarErrosPossiveis = async () => {
   process.on("uncaughtException", (err) => {
     console.error("Exceção Não Tratada:", err);
-    process.exit(1); // Encerra o processo
+    try {
+      fs.appendFileSync(
+        "error.log",
+        `Exceção Não Tratada: ${err.stack || err}\n`
+      );
+    } catch (e) {
+      console.error("Falha ao escrever em error.log:", e.message);
+    }
   });
 
   process.on("unhandledRejection", (reason) => {
     console.error("Rejeição de Promessa Não Tratada:", reason);
-    lidarErrosRejeicao(reason);
+    try {
+      lidarErrosRejeicao(reason);
+      fs.appendFileSync(
+        "error.log",
+        `Rejeição de Promessa Não Tratada: ${reason}\n`
+      );
+    } catch (e) {
+      console.error("Falha ao lidar com unhandledRejection:", e.message);
+    }
   });
 };
 
 const httpServer = async () => {
-  app.listen(port, () => {
-    console.log(`Servidor HTTP LOCALHOST iniciado na porta ${port}`);
+  app.listen(port, async () => {
+    console.log(`Servidor Http Localhost iniciado na porta ${port}`);
 
-    restoreAllSessions();
+    try {
+      // Aguarda a restauração de sessões com timeout para evitar travar
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Timeout ao restaurar sessões")),
+          5 * 60 * 1000
+        )
+      );
+
+      await Promise.race([restoreAllSessions(), timeoutPromise]);
+      console.log("Restauração de sessões finalizada com sucesso.");
+    } catch (err) {
+      console.error("Erro ao restaurar sessões:", err.message || err);
+      console.log("Servidor continuará rodando sem as sessões restauradas.");
+    }
   });
 };
 

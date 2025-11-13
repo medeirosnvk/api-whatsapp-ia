@@ -17,3 +17,6 @@ Rejeição de Promessa Não Tratada: TypeError: Cannot read properties of null (
 Rejeição de Promessa Não Tratada: TypeError: Cannot read properties of null (reading 'length')
 Rejeição de Promessa Não Tratada: AxiosError: Request failed with status code 500
 Rejeição de Promessa Não Tratada: AxiosError: Request failed with status code 500
+Rejeição de Promessa Não Tratada: Error: Protocol error (Runtime.callFunctionOn): Session closed. Most likely the page has been closed.
+Rejeição de Promessa Não Tratada: TypeError: Cannot read properties of null (reading 'close')
+Rejeição de Promessa Não Tratada: TypeError: Cannot read properties of null (reading 'close')
