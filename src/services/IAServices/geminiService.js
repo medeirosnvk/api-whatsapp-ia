@@ -1,6 +1,10 @@
 const axios = require("axios");
 const initialSystemPrompt = require("./geminiInitialPrompt");
-const { getListaCredores, getOfertasCredor } = require("../../utils/requests");
+const {
+  getListaCredores,
+  getOfertasCredor,
+  postAcordoMaster,
+} = require("../../utils/requests");
 const {
   getOrCreateContext,
   updateContext,
@@ -57,6 +61,49 @@ function detectNegotiationIntent(message) {
   return /(quero|desejo|gostaria|preciso|vou).*?(negociar|parcelar|resolver|pagar|quitar)/i.test(
     message
   );
+}
+
+function limitMessageSize(text, limit = 300) {
+  if (!text) return text;
+  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
+}
+
+function formatResponseData(data) {
+  if (data === null || data === undefined) return "sem detalhes adicionais.";
+  if (typeof data === "string" || typeof data === "number" || typeof data === "boolean") {
+    return String(data);
+  }
+
+  if (Array.isArray(data)) {
+    return data
+      .map((item, index) => `${index + 1}) ${formatResponseData(item)}`)
+      .join(" | ");
+  }
+
+  if (typeof data === "object") {
+    const entries = Object.entries(data).filter(
+      ([, value]) => value !== undefined && value !== null && value !== ""
+    );
+
+    if (!entries.length) {
+      return "retorno vazio.";
+    }
+
+    return entries
+      .map(([key, value]) => {
+        if (typeof value === "object") {
+          return `${key}: ${JSON.stringify(value)}`;
+        }
+        return `${key}: ${value}`;
+      })
+      .join(" | ");
+  }
+
+  try {
+    return JSON.stringify(data);
+  } catch (error) {
+    return "não foi possível formatar a resposta.";
+  }
 }
 
 /**
@@ -205,6 +252,82 @@ async function processCredorSelection(userId, selectedIndex) {
   }
 }
 
+async function processPlanoSelection(userId, selectedIndex) {
+  const context = getOrCreateContext(userId);
+  const index = selectedIndex - 1;
+
+  if (!context.data.ofertas || context.data.ofertas.length === 0) {
+    const message =
+      "Ainda não tenho planos disponíveis. Escolha primeiro qual credor deseja negociar.";
+    addToContext(userId, "model", message);
+    return { handled: true, message };
+  }
+
+  if (index < 0 || index >= context.data.ofertas.length) {
+    const message = `Plano inválido. Informe um número entre 1 e ${context.data.ofertas.length}.`;
+    addToContext(userId, "model", message);
+    return { handled: true, message };
+  }
+
+  const planoSelecionado = context.data.ofertas[index];
+  const { credorSelecionado } = context.data;
+
+  if (!credorSelecionado?.iddevedor) {
+    const message =
+      "Não consegui localizar o credor selecionado. Envie o CPF/CNPJ novamente para reiniciar.";
+    addToContext(userId, "model", message);
+    return { handled: true, message };
+  }
+
+  try {
+    addToContext(
+      userId,
+      "user",
+      `Plano ${selectedIndex} escolhido para iddevedor ${credorSelecionado.iddevedor}. Dados: ${JSON.stringify(
+        planoSelecionado
+      )}`
+    );
+
+    const acordoResponse = await postAcordoMaster(
+      credorSelecionado.iddevedor,
+      planoSelecionado
+    );
+
+    updateContext(userId, {
+      data: {
+        ...context.data,
+        planoSelecionado,
+        acordoResponse,
+      },
+    });
+
+    setState(userId, FLOW_STATES.FINALIZADO);
+
+    const waitingMessage = `Perfeito! Estou fechando o plano ${selectedIndex}. Aguarde o fechamento do acordo.`;
+    const formattedResponse = formatResponseData(acordoResponse);
+    const finalMessage = limitMessageSize(
+      `${waitingMessage} Retorno: ${formattedResponse}`
+    );
+
+    addToContext(userId, "model", finalMessage);
+
+    return {
+      handled: true,
+      message: finalMessage,
+    };
+  } catch (error) {
+    console.error(`[${userId}] Erro ao efetuar acordo:`, error.message);
+    const errorMessage = limitMessageSize(
+      "Houve um erro ao registrar o acordo. Já estou verificando, tente novamente em instantes."
+    );
+    addToContext(userId, "model", errorMessage);
+    return {
+      handled: true,
+      message: errorMessage,
+    };
+  }
+}
+
 /**
  * Envia mensagem para o Gemini e retorna resposta
  * @param {string} userId - ID do usuário
@@ -252,14 +375,22 @@ async function sendToGemini(userId, userMessage) {
       await processCredorSelection(userId, selectedNumber);
       credorProcessado = true;
     }
-    // Se já está aguardando seleção de plano, pode ser seleção de plano (não implementado ainda)
+    // Se já está aguardando seleção de plano, processa o acordo
+    if (currentState === FLOW_STATES.AGUARDANDO_SELECAO_PLANO && !credorProcessado) {
+      const planoResult = await processPlanoSelection(userId, selectedNumber);
+      if (planoResult?.handled) {
+        return {
+          message: planoResult.message,
+          state: getState(userId),
+        };
+      }
+    }
   }
 
   // Atualiza contexto após processamentos
   const updatedContext = getOrCreateContext(userId);
 
   // Adiciona a mensagem do usuário ao contexto
-  // (o processamento de documento/credor adiciona informações adicionais, mas a mensagem original também é importante)
   addToContext(userId, "user", userMessage);
 
   // Monta o payload para o Gemini
