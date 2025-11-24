@@ -1,10 +1,6 @@
 const axios = require("axios");
 const initialSystemPrompt = require("./geminiInitialPrompt");
-const {
-  getListaCredores,
-  getOfertasCredor,
-  postAcordoMaster,
-} = require("../../utils/requests");
+const { getListaCredores, getOfertasCredor } = require("../../utils/requests");
 const {
   getOrCreateContext,
   updateContext,
@@ -63,46 +59,72 @@ function detectNegotiationIntent(message) {
   );
 }
 
-function limitMessageSize(text, limit = 300) {
-  if (!text) return text;
-  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
+/**
+ * Monta instruções internas de condução conforme o estado atual
+ * @param {string} state - Estado atual do fluxo
+ * @param {object} data - Dados disponíveis no contexto
+ * @returns {string} - Diretriz textual
+ */
+function summarizeCredores(lista = []) {
+  if (!Array.isArray(lista) || lista.length === 0) return "";
+  return lista
+    .map(
+      (credor, index) =>
+        `${index + 1}-${credor.nome || credor.iddevedor || "Credor"}`
+    )
+    .slice(0, 5)
+    .join(", ");
 }
 
-function formatResponseData(data) {
-  if (data === null || data === undefined) return "sem detalhes adicionais.";
-  if (typeof data === "string" || typeof data === "number" || typeof data === "boolean") {
-    return String(data);
-  }
+function summarizePlanos(ofertas = []) {
+  if (!Array.isArray(ofertas) || ofertas.length === 0) return "";
+  return ofertas
+    .map((oferta, index) => {
+      const nome =
+        oferta?.nome ||
+        oferta?.titulo ||
+        oferta?.descricao ||
+        `Plano ${index + 1}`;
+      const parcelas =
+        oferta?.quantidadeParcelas ||
+        oferta?.parcelas ||
+        oferta?.qtdParcelas ||
+        oferta?.numeroParcelas;
+      const valor =
+        oferta?.valorTotal ||
+        oferta?.valor ||
+        oferta?.valor_original ||
+        oferta?.saldo;
+      const detalhes = [];
+      if (parcelas) detalhes.push(`${parcelas}x`);
+      if (valor) detalhes.push(`R$ ${valor}`);
+      return `${index + 1}-${nome}${detalhes.length ? ` (${detalhes.join(" · ")})` : ""}`;
+    })
+    .slice(0, 5)
+    .join(", ");
+}
 
-  if (Array.isArray(data)) {
-    return data
-      .map((item, index) => `${index + 1}) ${formatResponseData(item)}`)
-      .join(" | ");
-  }
+function buildFlowDirective(state, data = {}) {
+  const base =
+    "Conduza a conversa de forma natural, acolhedora e humana, sem mencionar que existe um fluxo ou etapas internas. Evite listas numeradas sempre que possível.";
 
-  if (typeof data === "object") {
-    const entries = Object.entries(data).filter(
-      ([, value]) => value !== undefined && value !== null && value !== ""
-    );
-
-    if (!entries.length) {
-      return "retorno vazio.";
-    }
-
-    return entries
-      .map(([key, value]) => {
-        if (typeof value === "object") {
-          return `${key}: ${JSON.stringify(value)}`;
-        }
-        return `${key}: ${value}`;
-      })
-      .join(" | ");
-  }
-
-  try {
-    return JSON.stringify(data);
-  } catch (error) {
-    return "não foi possível formatar a resposta.";
+  switch (state) {
+    case FLOW_STATES.AGUARDANDO_DOCUMENTO:
+      return `${base} incentive o cliente a compartilhar CPF ou CNPJ de maneira gentil e contextualizada.`;
+    case FLOW_STATES.AGUARDANDO_SELECAO_CREDOR:
+      return `${base} apresente as dívidas em aberto e ajude o cliente a escolher qual deseja resolver agora. Utilize como referência os credores: ${summarizeCredores(
+        data.listaCredores
+      )}.`;
+    case FLOW_STATES.AGUARDANDO_SELECAO_PLANO:
+      return `${base} descreva os planos disponíveis para o credor selecionado ${
+        data.credorSelecionado?.nome || ""
+      } e estimule a escolha do que fizer mais sentido. Planos disponíveis: ${summarizePlanos(
+        data.ofertas
+      )}.`;
+    case FLOW_STATES.AGUARDANDO_FECHAMENTO_ACORDO:
+      return `${base} confirme o plano escolhido e informe que o acordo está em preparação, convidando o cliente a aguardar enquanto finaliza os detalhes.`;
+    default:
+      return `${base} esteja pronta para identificar intenções de negociação e oferecer ajuda proativa.`;
   }
 }
 
@@ -221,6 +243,7 @@ async function processCredorSelection(userId, selectedIndex) {
         ...context.data,
         credorSelecionado,
         ofertas,
+        planoSelecionado: null,
       },
     });
 
@@ -252,80 +275,52 @@ async function processCredorSelection(userId, selectedIndex) {
   }
 }
 
+/**
+ * Processa a seleção de plano e atualiza estado para fechamento do acordo
+ * @param {string} userId - ID do usuário
+ * @param {number} selectedIndex - Índice do plano selecionado (1-based)
+ * @returns {Promise<object>} - Resultado do processamento
+ */
 async function processPlanoSelection(userId, selectedIndex) {
   const context = getOrCreateContext(userId);
   const index = selectedIndex - 1;
 
   if (!context.data.ofertas || context.data.ofertas.length === 0) {
-    const message =
-      "Ainda não tenho planos disponíveis. Escolha primeiro qual credor deseja negociar.";
-    addToContext(userId, "model", message);
-    return { handled: true, message };
-  }
-
-  if (index < 0 || index >= context.data.ofertas.length) {
-    const message = `Plano inválido. Informe um número entre 1 e ${context.data.ofertas.length}.`;
-    addToContext(userId, "model", message);
-    return { handled: true, message };
-  }
-
-  const planoSelecionado = context.data.ofertas[index];
-  const { credorSelecionado } = context.data;
-
-  if (!credorSelecionado?.iddevedor) {
-    const message =
-      "Não consegui localizar o credor selecionado. Envie o CPF/CNPJ novamente para reiniciar.";
-    addToContext(userId, "model", message);
-    return { handled: true, message };
-  }
-
-  try {
     addToContext(
       userId,
       "user",
-      `Plano ${selectedIndex} escolhido para iddevedor ${credorSelecionado.iddevedor}. Dados: ${JSON.stringify(
-        planoSelecionado
-      )}`
+      "Ainda não tenho ofertas para apresentar. Consulte as dívidas primeiro."
     );
-
-    const acordoResponse = await postAcordoMaster(
-      credorSelecionado.iddevedor,
-      planoSelecionado
-    );
-
-    updateContext(userId, {
-      data: {
-        ...context.data,
-        planoSelecionado,
-        acordoResponse,
-      },
-    });
-
-    setState(userId, FLOW_STATES.FINALIZADO);
-
-    const waitingMessage = `Perfeito! Estou fechando o plano ${selectedIndex}. Aguarde o fechamento do acordo.`;
-    const formattedResponse = formatResponseData(acordoResponse);
-    const finalMessage = limitMessageSize(
-      `${waitingMessage} Retorno: ${formattedResponse}`
-    );
-
-    addToContext(userId, "model", finalMessage);
-
-    return {
-      handled: true,
-      message: finalMessage,
-    };
-  } catch (error) {
-    console.error(`[${userId}] Erro ao efetuar acordo:`, error.message);
-    const errorMessage = limitMessageSize(
-      "Houve um erro ao registrar o acordo. Já estou verificando, tente novamente em instantes."
-    );
-    addToContext(userId, "model", errorMessage);
-    return {
-      handled: true,
-      message: errorMessage,
-    };
+    return { success: false, message: "Nenhuma oferta disponível." };
   }
+
+  if (index < 0 || index >= context.data.ofertas.length) {
+    addToContext(
+      userId,
+      "user",
+      `Número inválido. Escolha um plano entre 1 e ${context.data.ofertas.length}.`
+    );
+    return { success: false, message: "Índice de plano inválido." };
+  }
+
+  const planoSelecionado = context.data.ofertas[index];
+
+  updateContext(userId, {
+    data: {
+      ...context.data,
+      planoSelecionado,
+    },
+  });
+
+  addToContext(
+    userId,
+    "user",
+    `Plano escolhido (${index + 1}): ${JSON.stringify(planoSelecionado, null, 2)}`
+  );
+
+  setState(userId, FLOW_STATES.AGUARDANDO_FECHAMENTO_ACORDO);
+
+  return { success: true, planoSelecionado };
 }
 
 /**
@@ -336,19 +331,22 @@ async function processPlanoSelection(userId, selectedIndex) {
  */
 async function sendToGemini(userId, userMessage) {
   const context = getOrCreateContext(userId);
-  const currentState = getState(userId);
+  let currentState = getState(userId);
 
   console.log(`[${userId}] Estado atual: ${currentState}`);
   console.log(`[${userId}] Mensagem recebida: ${userMessage}`);
 
   // Detecta intenção de negociação primeiro
-  if (detectNegotiationIntent(userMessage) && currentState === FLOW_STATES.INICIAL) {
+  if (
+    detectNegotiationIntent(userMessage) &&
+    currentState === FLOW_STATES.INICIAL
+  ) {
     setState(userId, FLOW_STATES.AGUARDANDO_DOCUMENTO);
+    currentState = getState(userId);
   }
 
   // Processa documento se detectado (aceita em qualquer estado se ainda não foi processado)
   const documento = extractCpfCnpjFromText(userMessage);
-  let documentoProcessado = false;
   if (documento) {
     const updatedContext = getOrCreateContext(userId);
     // Se ainda não tem documento processado ou está aguardando documento
@@ -358,39 +356,29 @@ async function sendToGemini(userId, userMessage) {
       currentState === FLOW_STATES.INICIAL
     ) {
       await processDocument(userId, documento);
-      documentoProcessado = true;
+      currentState = getState(userId);
     }
   }
 
   // Processa seleção de credor se detectada
   const selectedNumber = extractNumberFromText(userMessage);
-  let credorProcessado = false;
-  if (
+  if (selectedNumber && currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR) {
+    await processCredorSelection(userId, selectedNumber);
+    currentState = getState(userId);
+  } else if (
     selectedNumber &&
-    (currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR ||
-      currentState === FLOW_STATES.AGUARDANDO_SELECAO_PLANO)
+    currentState === FLOW_STATES.AGUARDANDO_SELECAO_PLANO
   ) {
-    // Se está aguardando seleção de credor, processa a seleção
-    if (currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR) {
-      await processCredorSelection(userId, selectedNumber);
-      credorProcessado = true;
-    }
-    // Se já está aguardando seleção de plano, processa o acordo
-    if (currentState === FLOW_STATES.AGUARDANDO_SELECAO_PLANO && !credorProcessado) {
-      const planoResult = await processPlanoSelection(userId, selectedNumber);
-      if (planoResult?.handled) {
-        return {
-          message: planoResult.message,
-          state: getState(userId),
-        };
-      }
-    }
+    await processPlanoSelection(userId, selectedNumber);
+    currentState = getState(userId);
   }
 
   // Atualiza contexto após processamentos
   const updatedContext = getOrCreateContext(userId);
+  currentState = getState(userId);
 
   // Adiciona a mensagem do usuário ao contexto
+  // (o processamento de documento/credor adiciona informações adicionais, mas a mensagem original também é importante)
   addToContext(userId, "user", userMessage);
 
   // Monta o payload para o Gemini
@@ -404,6 +392,15 @@ async function sendToGemini(userId, userMessage) {
     });
     updateContext(userId, {
       flags: { ...updatedContext.flags, promptInicialEnviado: true },
+    });
+  }
+
+  // Adiciona instruções internas do estado atual para orientar a resposta natural
+  const flowDirective = buildFlowDirective(currentState, updatedContext.data);
+  if (flowDirective) {
+    contents.push({
+      role: "user",
+      parts: [{ text: flowDirective }],
     });
   }
 

@@ -11,6 +11,7 @@ const FLOW_STATES = {
   AGUARDANDO_DOCUMENTO: "aguardando_documento",
   AGUARDANDO_SELECAO_CREDOR: "aguardando_selecao_credor",
   AGUARDANDO_SELECAO_PLANO: "aguardando_selecao_plano",
+  AGUARDANDO_FECHAMENTO_ACORDO: "aguardando_fechamento_acordo",
   FINALIZADO: "finalizado",
 };
 
@@ -30,6 +31,7 @@ function getOrCreateContext(userId) {
         credorSelecionado: null,
         ofertas: [],
         documento: null,
+        planoSelecionado: null,
       },
       flags: {
         saudacaoEnviada: false,

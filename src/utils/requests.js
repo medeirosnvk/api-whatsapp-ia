@@ -14,11 +14,11 @@ const getOfertasCredor = async (iddevedor) => {
   return response.data;
 };
 
-const postAcordoMaster = async (iddevedor, plano) => {
+const postAcordoMaster = async (documento, plano) => {
   const url = `https://api.cobrance.online:3030/registro-master-acordo`;
 
   const response = await axios.post(url, {
-    iddevedor,
+    documento,
     plano,
   });
   return response.data;
