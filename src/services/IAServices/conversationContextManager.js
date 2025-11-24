@@ -31,7 +31,6 @@ function getOrCreateContext(userId) {
         credorSelecionado: null,
         ofertas: [],
         documento: null,
-        planoSelecionado: null,
       },
       flags: {
         saudacaoEnviada: false,

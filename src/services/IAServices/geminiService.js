@@ -139,8 +139,12 @@ async function processDocument(userId, documento) {
 
   try {
     console.log(`[${userId}] Buscando credores para documento: ${documento}`);
-    const listaCredores = await getListaCredores(documento);
-    console.log("listaCredores -", listaCredores)
+    const credoresApiResponse = await getListaCredores(documento);
+    const listaCredores = (credoresApiResponse || []).map((credor = {}) => ({
+      nome: credor.nome || credor.empresa || "Credor",
+      iddevedor: credor.iddevedor,
+    }));
+    console.log("listaCredores -", listaCredores);
 
     if (!listaCredores || listaCredores.length === 0) {
       addToContext(
