@@ -140,6 +140,7 @@ async function processDocument(userId, documento) {
   try {
     console.log(`[${userId}] Buscando credores para documento: ${documento}`);
     const listaCredores = await getListaCredores(documento);
+    console.log("listaCredores -", listaCredores)
 
     if (!listaCredores || listaCredores.length === 0) {
       addToContext(
@@ -159,22 +160,15 @@ async function processDocument(userId, documento) {
       },
     });
 
-    // Adiciona os dados ao contexto da conversa
+    // Adiciona resumo filtrado ao contexto da conversa (sem valores/saldos)
     const credoresInfo = listaCredores
-      .map(
-        (credor, index) =>
-          `${index + 1}. ${credor.nome || "Credor sem nome"} - ID: ${credor.iddevedor}`
-      )
+      .map((credor, index) => `${index + 1}. ${credor.nome || "Credor"}`)
       .join("\n");
 
     addToContext(
       userId,
       "user",
-      `Dados encontrados na API para o documento ${documento}:\n${JSON.stringify(
-        listaCredores,
-        null,
-        2
-      )}\n\nLista formatada:\n${credoresInfo}`
+      `Empresas disponíveis para negociação (documento ${documento}):\n${credoresInfo}`
     );
 
     setState(
@@ -236,6 +230,7 @@ async function processCredorSelection(userId, selectedIndex) {
       `[${userId}] Buscando ofertas para credor: ${credorSelecionado.nome} (ID: ${credorSelecionado.iddevedor})`
     );
     const ofertas = await getOfertasCredor(credorSelecionado.iddevedor);
+    console.log("ofertas -", ofertas)
 
     // Atualiza o contexto
     updateContext(userId, {
