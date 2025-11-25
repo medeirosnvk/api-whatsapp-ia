@@ -404,13 +404,30 @@ async function processAcordoFechamento(userId) {
     console.log(`[${userId}] Iniciando fechamento do acordo...`);
 
     // Adiciona mensagem de aguardo ao contexto
-    addToContext(userId, "user", "Finalizando o acordo, por favor aguarde...");
-
-    // Chama a API de registro do acordo - aguarda até 10 segundos
-    const acordoResponse = await postAcordoMaster(
-      context.data.documento,
-      context.data.planoSelecionado
+    addToContext(
+      userId,
+      "user",
+      "Finalizando o acordo, por favor aguarde... ⏳"
     );
+
+    // Cria uma promise com timeout de 30 segundos
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              "Timeout ao processar acordo. A requisição excedeu 30 segundos. Tente novamente."
+            )
+          ),
+        30000
+      )
+    );
+
+    // Executa a API de registro com tratamento de timeout
+    const acordoResponse = await Promise.race([
+      postAcordoMaster(context.data.documento, context.data.planoSelecionado),
+      timeoutPromise,
+    ]);
 
     console.log(`[${userId}] Resposta da API:`, acordoResponse);
 
@@ -445,7 +462,7 @@ async function processAcordoFechamento(userId) {
     addToContext(
       userId,
       "user",
-      `Desculpe, ocorreu um erro ao finalizar o acordo: ${error.message}. Tente novamente mais tarde.`
+      `Desculpe, ocorreu um erro ao finalizar o acordo: ${error.message}. Por favor, tente novamente.`
     );
 
     return {
