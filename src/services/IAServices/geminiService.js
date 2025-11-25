@@ -425,16 +425,13 @@ async function processAcordoFechamento(userId) {
 
     console.log(
       "DADOS ACORDO MASTER -",
-      context.data.documento,
+      userId,
       context.data.planoSelecionado.plano
     );
 
     // Executa a API de registro com tratamento de timeout
     const acordoResponse = await Promise.race([
-      postAcordoMaster(
-        context.data.documento,
-        context.data.planoSelecionado.plano
-      ),
+      postAcordoMaster(userId, context.data.planoSelecionado.plano),
       timeoutPromise,
     ]);
 
