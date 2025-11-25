@@ -402,13 +402,6 @@ async function processAcordoFechamento(userId) {
 
   try {
     console.log(`[${userId}] Iniciando fechamento do acordo...`);
-    console.log(
-      `[${userId}] Dados do acordo: Documento=${
-        context.data.documento
-      }, Credor=${context.data.credorSelecionado.nome}, Plano=${JSON.stringify(
-        context.data.planoSelecionado
-      )}`
-    );
 
     // Adiciona mensagem de aguardo ao contexto
     addToContext(
@@ -428,6 +421,12 @@ async function processAcordoFechamento(userId) {
           ),
         30000
       )
+    );
+
+    console.log(
+      "DADOS ACORDO MASTER -",
+      context.data.documento,
+      context.data.planoSelecionado
     );
 
     // Executa a API de registro com tratamento de timeout
