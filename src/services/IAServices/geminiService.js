@@ -70,7 +70,9 @@ function summarizeCredores(lista = []) {
   return lista
     .map(
       (credor, index) =>
-        `${index + 1}-${credor.nome || credor.iddevedor || "Credor"}`
+        `${index + 1}-Nome: ${credor.nome || "Credor"} | ID: ${
+          credor.iddevedor || "Indisponível"
+        }`
     )
     .slice(0, 5)
     .join(", ");
@@ -106,7 +108,7 @@ function summarizePlanos(ofertas = []) {
 
 function buildFlowDirective(state, data = {}) {
   const base =
-    "Conduza a conversa de forma natural, acolhedora e humana, sem mencionar que existe um fluxo ou etapas internas. Evite listas numeradas sempre que possível.";
+    "Conduza a conversa de forma natural, acolhedora e humana, sem mencionar que existe um fluxo ou etapas internas. Evite listas numeradas sempre que possível. Use somente os dados recebidos nas APIs/contexto e deixe claro quando algo ainda não estiver disponível.";
 
   switch (state) {
     case FLOW_STATES.AGUARDANDO_DOCUMENTO:
@@ -171,7 +173,7 @@ async function processDocument(userId, documento) {
         (credor, index) =>
           `${index + 1}. Nome: ${credor.nome || "Credor"} | Empresa: ${
             credor.empresa || credor.nome || "Empresa"
-          }`
+          } | ID: ${credor.iddevedor || "Indisponível"}`
       )
       .join("\n");
 
