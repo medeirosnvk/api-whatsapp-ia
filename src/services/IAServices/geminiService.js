@@ -142,6 +142,7 @@ async function processDocument(userId, documento) {
     const credoresApiResponse = await getListaCredores(documento);
     const listaCredores = (credoresApiResponse || []).map((credor = {}) => ({
       nome: credor.nome || credor.empresa || "Credor",
+      empresa: credor.empresa || credor.nome || "Empresa",
       iddevedor: credor.iddevedor,
     }));
     console.log("listaCredores -", listaCredores);
@@ -166,7 +167,12 @@ async function processDocument(userId, documento) {
 
     // Adiciona resumo filtrado ao contexto da conversa (sem valores/saldos)
     const credoresInfo = listaCredores
-      .map((credor, index) => `${index + 1}. ${credor.nome || "Credor"}`)
+      .map(
+        (credor, index) =>
+          `${index + 1}. Nome: ${credor.nome || "Credor"} | Empresa: ${
+            credor.empresa || credor.nome || "Empresa"
+          }`
+      )
       .join("\n");
 
     addToContext(
