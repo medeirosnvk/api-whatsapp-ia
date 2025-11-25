@@ -402,6 +402,13 @@ async function processAcordoFechamento(userId) {
 
   try {
     console.log(`[${userId}] Iniciando fechamento do acordo...`);
+    console.log(
+      `[${userId}] Dados do acordo: Documento=${
+        context.data.documento
+      }, Credor=${context.data.credorSelecionado.nome}, Plano=${JSON.stringify(
+        context.data.planoSelecionado
+      )}`
+    );
 
     // Adiciona mensagem de aguardo ao contexto
     addToContext(
@@ -449,7 +456,7 @@ async function processAcordoFechamento(userId) {
 
     return {
       success: true,
-      accord: {
+      acordo: {
         documento: context.data.documento,
         credor: context.data.credorSelecionado,
         plano: context.data.planoSelecionado,
@@ -484,61 +491,120 @@ function formatarRespostaAcordo(acordoData) {
 
   let mensagem = "✅ Acordo Finalizado com Sucesso!\n\n";
 
-  // Processa campos comuns da resposta
-  if (acordoData.id || acordoData.ID) {
-    mensagem += `ID do Acordo: ${acordoData.id || acordoData.ID}\n`;
+  // Dados da Primeira Etapa (Informações principais do acordo)
+  if (acordoData.primeiraEtapaResponse) {
+    const primeira = acordoData.primeiraEtapaResponse;
+
+    if (primeira.iddevedor) {
+      mensagem += `ID Devedor: ${primeira.iddevedor}\n`;
+    }
+
+    if (primeira.idcredor) {
+      mensagem += `ID Credor: ${primeira.idcredor}\n`;
+    }
+
+    if (primeira.plano) {
+      mensagem += `Plano Selecionado: ${primeira.plano}\n`;
+    }
+
+    if (primeira.total_geral) {
+      mensagem += `Valor Total: R$ ${primeira.total_geral
+        .toFixed(2)
+        .replace(".", ",")}\n`;
+    }
+
+    if (primeira.valor_parcela) {
+      mensagem += `Valor da Parcela: R$ ${primeira.valor_parcela.replace(
+        ".",
+        ","
+      )}\n`;
+    }
+
+    if (primeira.ultimaDataVencimento) {
+      mensagem += `Última Data de Vencimento: ${formatarData(
+        primeira.ultimaDataVencimento
+      )}\n`;
+    }
+
+    // Detalha as parcelas se disponíveis
+    if (
+      primeira.vencimentosParcelas &&
+      Array.isArray(primeira.vencimentosParcelas)
+    ) {
+      mensagem += `\nDetalhes das Parcelas:\n`;
+      primeira.vencimentosParcelas.forEach((parcela, index) => {
+        mensagem += `  Parcela ${
+          index + 1
+        }: R$ ${parcela.valorParcelaAtual.replace(
+          ".",
+          ","
+        )} - Vencimento: ${formatarData(parcela.vencimento)}\n`;
+      });
+    }
   }
 
-  if (acordoData.numero_acordo || acordoData.numeroAcordo) {
-    mensagem += `Número do Acordo: ${
-      acordoData.numero_acordo || acordoData.numeroAcordo
-    }\n`;
+  // Dados da Terceira Etapa (Boleto e PIX)
+  if (acordoData.terceiraEtapaResponse) {
+    const terceira = acordoData.terceiraEtapaResponse;
+    mensagem += `\n`;
+
+    if (terceira.pixCopiaECola) {
+      mensagem += `🔐 PIX Copia e Cola:\n${terceira.pixCopiaECola}\n\n`;
+    }
+
+    if (terceira.urlBoleto) {
+      mensagem += `📄 Link do Boleto:\n${terceira.urlBoleto}\n\n`;
+    }
+
+    if (terceira.urlQrCode) {
+      mensagem += `📱 QR Code PIX:\n${terceira.urlQrCode}\n`;
+    }
   }
 
-  if (acordoData.status) {
-    mensagem += `Status: ${acordoData.status}\n`;
-  }
+  // Fallback para campos legados (compatibilidade com APIs antigas)
+  if (!acordoData.primeiraEtapaResponse && !acordoData.terceiraEtapaResponse) {
+    if (acordoData.id || acordoData.ID) {
+      mensagem += `ID do Acordo: ${acordoData.id || acordoData.ID}\n`;
+    }
 
-  if (acordoData.data_criacao || acordoData.dataCriacao) {
-    mensagem += `Data de Criação: ${
-      acordoData.data_criacao || acordoData.dataCriacao
-    }\n`;
-  }
+    if (acordoData.numero_acordo || acordoData.numeroAcordo) {
+      mensagem += `Número do Acordo: ${
+        acordoData.numero_acordo || acordoData.numeroAcordo
+      }\n`;
+    }
 
-  if (acordoData.proxima_parcela || acordoData.proximaParcela) {
-    mensagem += `Próxima Parcela: ${
-      acordoData.proxima_parcela || acordoData.proximaParcela
-    }\n`;
-  }
+    if (acordoData.status) {
+      mensagem += `Status: ${acordoData.status}\n`;
+    }
 
-  if (acordoData.valor_primeira_parcela || acordoData.valorPrimeiraParcela) {
-    mensagem += `Valor da Primeira Parcela: R$ ${
-      acordoData.valor_primeira_parcela || acordoData.valorPrimeiraParcela
-    }\n`;
-  }
+    if (acordoData.data_criacao || acordoData.dataCriacao) {
+      mensagem += `Data de Criação: ${
+        acordoData.data_criacao || acordoData.dataCriacao
+      }\n`;
+    }
 
-  if (acordoData.quantidade_parcelas || acordoData.quantidadeParcelas) {
-    mensagem += `Total de Parcelas: ${
-      acordoData.quantidade_parcelas || acordoData.quantidadeParcelas
-    }\n`;
-  }
-
-  if (acordoData.valor_total || acordoData.valorTotal) {
-    mensagem += `Valor Total: R$ ${
-      acordoData.valor_total || acordoData.valorTotal
-    }\n`;
-  }
-
-  if (acordoData.desconto || acordoData.descontoPercentual) {
-    mensagem += `Desconto Concedido: ${
-      acordoData.desconto || acordoData.descontoPercentual
-    }\n`;
+    if (acordoData.valor_total || acordoData.valorTotal) {
+      mensagem += `Valor Total: R$ ${
+        acordoData.valor_total || acordoData.valorTotal
+      }\n`;
+    }
   }
 
   mensagem +=
     "\n🎉 Seu acordo foi registrado com sucesso! Acompanhe as datas das parcelas.";
 
   return mensagem;
+}
+
+/**
+ * Formata uma data no formato YYYY-MM-DD para DD/MM/YYYY
+ * @param {string} data - Data em formato YYYY-MM-DD
+ * @returns {string} - Data formatada em DD/MM/YYYY
+ */
+function formatarData(data) {
+  if (!data) return "";
+  const [ano, mes, dia] = data.split("-");
+  return `${dia}/${mes}/${ano}`;
 }
 
 /**
