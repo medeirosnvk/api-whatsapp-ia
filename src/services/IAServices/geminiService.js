@@ -49,6 +49,32 @@ function extractNumberFromText(text) {
 }
 
 /**
+ * Tenta identificar o índice de um credor a partir do iddevedor informado na mensagem
+ * @param {string} text
+ * @param {Array} listaCredores
+ * @returns {number} - índice 0-based ou -1 quando não encontrado
+ */
+function findCredorIndexById(text, listaCredores = []) {
+  if (!text || !Array.isArray(listaCredores) || listaCredores.length === 0) {
+    return -1;
+  }
+
+  const numericTokens = text.match(/\d+/g);
+  if (!numericTokens) return -1;
+
+  for (const token of numericTokens) {
+    const index = listaCredores.findIndex(
+      (credor) => credor?.iddevedor && String(credor.iddevedor) === token
+    );
+    if (index !== -1) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+/**
  * Detecta intenção de iniciar negociação
  * @param {string} message - Mensagem do usuário
  * @returns {boolean} - True se detectar intenção de negociar
@@ -180,7 +206,7 @@ async function processDocument(userId, documento) {
     addToContext(
       userId,
       "user",
-      `Empresas disponíveis para negociação (documento ${documento}):\n${credoresInfo}`
+      `Empresas disponíveis para negociação (documento ${documento}):\n${credoresInfo}\n\nEnvie o número da lista ou o ID informado para escolher com quem negociar primeiro.`
     );
 
     setState(
@@ -367,9 +393,23 @@ async function sendToGemini(userId, userMessage) {
     }
   }
 
-  // Processa seleção de credor se detectada
   const selectedNumber = extractNumberFromText(userMessage);
-  if (selectedNumber && currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR) {
+  const listaCredores = context.data?.listaCredores || [];
+  const credorIndexFromId =
+    currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR
+      ? findCredorIndexById(userMessage, listaCredores)
+      : -1;
+
+  if (
+    credorIndexFromId >= 0 &&
+    currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR
+  ) {
+    await processCredorSelection(userId, credorIndexFromId + 1);
+    currentState = getState(userId);
+  } else if (
+    selectedNumber &&
+    currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR
+  ) {
     await processCredorSelection(userId, selectedNumber);
     currentState = getState(userId);
   } else if (
