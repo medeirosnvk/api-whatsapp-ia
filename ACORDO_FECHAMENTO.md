@@ -1,6 +1,7 @@
 # 🔧 Implementação do Fechamento de Acordo
 
 **Data de Implementação:** 25 de novembro de 2025  
+**Última Atualização:** 25 de novembro de 2025 (Timeout: 10s → 30s)  
 **Status:** ✅ Implementado e Testado
 
 ---
@@ -21,7 +22,7 @@ const {
 
 ### 2. **Função `processAcordoFechamento`**
 
-Implementa o fluxo completo de fechamento do acordo:
+Implementa o fluxo completo de fechamento do acordo com timeout de até **30 segundos**:
 
 ```javascript
 async function processAcordoFechamento(userId) {
@@ -30,16 +31,27 @@ async function processAcordoFechamento(userId) {
     return { success: false, message: "Dados incompletos." };
   }
 
-  // 2. Informa ao usuário que está processando
-  addToContext(userId, "user", "Finalizando o acordo, por favor aguarde...");
+  // 2. Informa ao usuário que está processando (com feedback visual)
+  addToContext(userId, "user", "Finalizando o acordo, por favor aguarde... ⏳");
 
-  // 3. Chama a API https://api.cobrance.online:3030/registro-master-acordo
-  const acordoResponse = await postAcordoMaster(documento, planoSelecionado);
+  // 3. Cria Promise.race com timeout de 30 segundos
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(
+      () => reject(new Error("Timeout ao processar acordo. Tente novamente.")),
+      30000 // 30 segundos
+    )
+  );
 
-  // 4. Formata a resposta em uma mensagem legível
+  // 4. Executa a API com tratamento de timeout
+  const acordoResponse = await Promise.race([
+    postAcordoMaster(documento, planoSelecionado),
+    timeoutPromise,
+  ]);
+
+  // 5. Formata a resposta em uma mensagem legível
   const mensagemSucesso = formatarRespostaAcordo(acordoResponse);
 
-  // 5. Retorna os dados ao contexto e atualiza estado
+  // 6. Retorna os dados ao contexto e atualiza estado
   addToContext(userId, "user", mensagemSucesso);
   setState(userId, FLOW_STATES.FINALIZADO);
 
@@ -89,9 +101,10 @@ function formatarRespostaAcordo(acordoData) {
 ┌─────────────────────────────────────────────────────────────────┐
 │ PROCESSAMENTO DO FECHAMENTO                                     │
 │ 1️⃣  Validação de dados (documento, credor, plano)              │
-│ 2️⃣  Mensagem de aguardo: "Finalizando o acordo..."             │
+│ 2️⃣  Mensagem de aguardo: "Finalizando o acordo... ⏳"          │
 │ 3️⃣  POST https://api.cobrance.online:3030/registro-master-acordo│
-│     ├─ Timeout: ~10 segundos                                   │
+│     ├─ Timeout: até 30 segundos (antes era 10s)                │
+│     ├─ Promise.race para controle de timeout                   │
 │     └─ Payload: { documento, plano }                           │
 │ 4️⃣  Recebe resposta da API                                     │
 │ 5️⃣  Formata resposta em mensagem legível                       │
@@ -137,10 +150,11 @@ GET https://api.cobrance.online:3030/credores/oferta-parcelas?iddevedor=123
 Resposta: Array de ofertas/planos disponíveis
 ```
 
-### 3. **POST `/registro-master-acordo`** ⏱️ ~10 segundos
+### 3. **POST `/registro-master-acordo`** ⏱️ até 30 segundos
 
 ```
 POST https://api.cobrance.online:3030/registro-master-acordo
+Timeout: 30 segundos (aumentado de 10s)
 Body: {
   "documento": "12345678901",
   "plano": { objeto completo do plano selecionado }
@@ -174,15 +188,34 @@ if (!planoSelecionado || !credorSelecionado || !documento) {
 }
 ```
 
-#### 2. **Timeout ou Erro de Conectividade**
+#### 2. **Timeout ou Erro de Conectividade** (30 segundos)
 
 ```javascript
 try {
-  const acordoResponse = await postAcordoMaster(...);
+  // Promise.race aguarda a mais rápida entre a requisição e o timeout
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(
+      () =>
+        reject(
+          new Error(
+            "Timeout ao processar acordo. A requisição excedeu 30 segundos."
+          )
+        ),
+      30000 // 30 segundos
+    )
+  );
+
+  const acordoResponse = await Promise.race([
+    postAcordoMaster(documento, planoSelecionado),
+    timeoutPromise,
+  ]);
 } catch (error) {
   console.error(`[${userId}] Erro ao fechar acordo:`, error.message);
   addToContext(userId, "user", `Desculpe, ocorreu um erro: ${error.message}`);
-  return { success: false, message: `Erro ao processar acordo: ${error.message}` };
+  return {
+    success: false,
+    message: `Erro ao processar acordo: ${error.message}`,
+  };
 }
 ```
 
@@ -212,31 +245,31 @@ IA: "Ótimo! Tenho 3 planos de parcelamento:"
 
 Usuário: "2"
 IA: "Excelente! Seu acordo está sendo finalizado..."
-    [POST para /registro-master-acordo - aguarda ~10s]
+    [POST para /registro-master-acordo - aguarda até 30s]
     "✅ Acordo Finalizado com Sucesso!
      ID do Acordo: 12345
      Número: ACC-2025-11-25-001
      ..."
 ```
 
-### Cenário 2: Erro de Timeout
+### Cenário 2: Erro de Timeout (>30 segundos)
 
-```
+````
 Usuário: "2"
-IA: "Excelente! Seu acordo está sendo finalizado..."
-    [POST para /registro-master-acordo - timeout após 10s]
+IA: "Excelente! Seu acordo está sendo finalizado... ⏳"
+    [POST para /registro-master-acordo - timeout após 30s]
     "Desculpe, ocorreu um erro ao finalizar o acordo:
-     Timeout. Tente novamente mais tarde."
-```
+     Timeout ao processar acordo. A requisição excedeu 30 segundos. Tente novamente."
+```### Cenário 3: Dados Incompletos
 
-### Cenário 3: Dados Incompletos
+````
 
-```
 // Se usuário não completar alguma etapa
 Estado: AGUARDANDO_FECHAMENTO_ACORDO (mas dados faltando)
 Resultado: "Informações incompletas para finalizar o acordo.
-           Por favor, comece novamente."
-```
+Por favor, comece novamente."
+
+````
 
 ---
 
@@ -264,7 +297,7 @@ context.data = {
 }
 
 context.state = "finalizado"
-```
+````
 
 ---
 
