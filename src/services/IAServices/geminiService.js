@@ -35,14 +35,16 @@ function extractCpfCnpjFromText(text) {
  * @returns {number|null} - Número encontrado ou null
  */
 function extractNumberFromText(text) {
-  const matches = text.match(/\b[1-9][0-9]?\b/);
+  if (!text) return null;
+  const cleaned = text.trim();
+  // Tenta encontrar um número inteiro no início da mensagem ou isolado
+  const matches = cleaned.match(/^\d+|\s(\d+)$|^(\d+)\s/);
   if (!matches) return null;
 
-  for (const match of matches) {
-    const num = parseInt(match, 10);
-    if (!isNaN(num) && num > 0) {
-      return num;
-    }
+  // Extrai o número capturado
+  const num = parseInt(matches[0].trim() || matches[1] || matches[2], 10);
+  if (!isNaN(num) && num > 0) {
+    return num;
   }
 
   return null;
@@ -126,7 +128,9 @@ function summarizePlanos(ofertas = []) {
       const detalhes = [];
       if (parcelas) detalhes.push(`${parcelas}x`);
       if (valor) detalhes.push(`R$ ${valor}`);
-      return `${index + 1}-${nome}${detalhes.length ? ` (${detalhes.join(" · ")})` : ""}`;
+      return `${index + 1}-${nome}${
+        detalhes.length ? ` (${detalhes.join(" · ")})` : ""
+      }`;
     })
     .slice(0, 5)
     .join(", ");
@@ -268,7 +272,18 @@ async function processCredorSelection(userId, selectedIndex) {
       `[${userId}] Buscando ofertas para credor: ${credorSelecionado.nome} (ID: ${credorSelecionado.iddevedor})`
     );
     const ofertas = await getOfertasCredor(credorSelecionado.iddevedor);
-    console.log("ofertas -", ofertas)
+    console.log("ofertas -", ofertas);
+
+    // Valida se ofertas está vazio
+    if (!ofertas || ofertas.length === 0) {
+      addToContext(
+        userId,
+        "user",
+        `Desculpe, não há ofertas disponíveis no momento para o credor "${credorSelecionado.nome}". Tente novamente mais tarde ou escolha outro credor.`
+      );
+      setState(userId, FLOW_STATES.AGUARDANDO_SELECAO_CREDOR);
+      return { success: false, message: "Nenhuma oferta disponível." };
+    }
 
     // Atualiza o contexto
     updateContext(userId, {
@@ -348,12 +363,60 @@ async function processPlanoSelection(userId, selectedIndex) {
   addToContext(
     userId,
     "user",
-    `Plano escolhido (${index + 1}): ${JSON.stringify(planoSelecionado, null, 2)}`
+    `Plano escolhido (${index + 1}): ${JSON.stringify(
+      planoSelecionado,
+      null,
+      2
+    )}`
   );
 
   setState(userId, FLOW_STATES.AGUARDANDO_FECHAMENTO_ACORDO);
 
   return { success: true, planoSelecionado };
+}
+
+/**
+ * Processa o fechamento do acordo
+ * @param {string} userId - ID do usuário
+ * @returns {Promise<object>} - Resultado do processamento
+ */
+async function processAcordoFechamento(userId) {
+  const context = getOrCreateContext(userId);
+
+  if (
+    !context.data.planoSelecionado ||
+    !context.data.credorSelecionado ||
+    !context.data.documento
+  ) {
+    addToContext(
+      userId,
+      "user",
+      "Informações incompletas para finalizar o acordo. Por favor, comece novamente."
+    );
+    return { success: false, message: "Dados incompletos." };
+  }
+
+  // Adiciona confirmação de fechamento ao contexto
+  const resumoAcordo = `
+Resumo do Acordo:
+- Documento: ${context.data.documento}
+- Credor: ${context.data.credorSelecionado.nome}
+- Plano: ${JSON.stringify(context.data.planoSelecionado, null, 2)}
+
+Acordo sendo finalizado...`;
+
+  addToContext(userId, "user", resumoAcordo);
+
+  setState(userId, FLOW_STATES.FINALIZADO);
+
+  return {
+    success: true,
+    acordo: {
+      documento: context.data.documento,
+      credor: context.data.credorSelecionado,
+      plano: context.data.planoSelecionado,
+    },
+  };
 }
 
 /**
@@ -369,13 +432,10 @@ async function sendToGemini(userId, userMessage) {
   console.log(`[${userId}] Estado atual: ${currentState}`);
   console.log(`[${userId}] Mensagem recebida: ${userMessage}`);
 
-  // Detecta intenção de negociação primeiro
-  if (
-    detectNegotiationIntent(userMessage) &&
-    currentState === FLOW_STATES.INICIAL
-  ) {
+  // Se é o primeiro contato, move para aguardando documento
+  if (currentState === FLOW_STATES.INICIAL) {
     setState(userId, FLOW_STATES.AGUARDANDO_DOCUMENTO);
-    currentState = getState(userId);
+    currentState = FLOW_STATES.AGUARDANDO_DOCUMENTO;
   }
 
   // Processa documento se detectado (aceita em qualquer estado se ainda não foi processado)
@@ -385,8 +445,7 @@ async function sendToGemini(userId, userMessage) {
     // Se ainda não tem documento processado ou está aguardando documento
     if (
       !updatedContext.data.documento ||
-      currentState === FLOW_STATES.AGUARDANDO_DOCUMENTO ||
-      currentState === FLOW_STATES.INICIAL
+      currentState === FLOW_STATES.AGUARDANDO_DOCUMENTO
     ) {
       await processDocument(userId, documento);
       currentState = getState(userId);
@@ -400,23 +459,41 @@ async function sendToGemini(userId, userMessage) {
       ? findCredorIndexById(userMessage, listaCredores)
       : -1;
 
+  // Processa seleção de credor por ID (iddevedor) - prioridade 1
   if (
     credorIndexFromId >= 0 &&
     currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR
   ) {
+    console.log(
+      `[${userId}] Selecionando credor por ID: índice ${credorIndexFromId}`
+    );
     await processCredorSelection(userId, credorIndexFromId + 1);
     currentState = getState(userId);
-  } else if (
+  }
+  // Processa seleção de credor por número da lista - prioridade 2
+  else if (
     selectedNumber &&
     currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR
   ) {
+    console.log(
+      `[${userId}] Selecionando credor por número: ${selectedNumber}`
+    );
     await processCredorSelection(userId, selectedNumber);
     currentState = getState(userId);
-  } else if (
+  }
+  // Processa seleção de plano por número
+  else if (
     selectedNumber &&
     currentState === FLOW_STATES.AGUARDANDO_SELECAO_PLANO
   ) {
+    console.log(`[${userId}] Selecionando plano: ${selectedNumber}`);
     await processPlanoSelection(userId, selectedNumber);
+    currentState = getState(userId);
+  }
+  // Processa fechamento de acordo
+  else if (currentState === FLOW_STATES.AGUARDANDO_FECHAMENTO_ACORDO) {
+    console.log(`[${userId}] Processando fechamento do acordo...`);
+    await processAcordoFechamento(userId);
     currentState = getState(userId);
   }
 
@@ -488,7 +565,10 @@ async function sendToGemini(userId, userMessage) {
       state: getState(userId),
     };
   } catch (err) {
-    console.error(`[${userId}] Erro ao enviar mensagem para Gemini:`, err.message);
+    console.error(
+      `[${userId}] Erro ao enviar mensagem para Gemini:`,
+      err.message
+    );
     return {
       message:
         "Houve um erro ao processar sua solicitação. Tente novamente mais tarde.",
@@ -497,4 +577,4 @@ async function sendToGemini(userId, userMessage) {
   }
 }
 
-module.exports = { sendToGemini };
+module.exports = { sendToGemini, processAcordoFechamento };
