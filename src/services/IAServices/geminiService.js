@@ -1,6 +1,10 @@
 const axios = require("axios");
 const initialSystemPrompt = require("./geminiInitialPrompt");
-const { getListaCredores, getOfertasCredor } = require("../../utils/requests");
+const {
+  getListaCredores,
+  getOfertasCredor,
+  postAcordoMaster,
+} = require("../../utils/requests");
 const {
   getOrCreateContext,
   updateContext,
@@ -396,27 +400,128 @@ async function processAcordoFechamento(userId) {
     return { success: false, message: "Dados incompletos." };
   }
 
-  // Adiciona confirmação de fechamento ao contexto
-  const resumoAcordo = `
-Resumo do Acordo:
-- Documento: ${context.data.documento}
-- Credor: ${context.data.credorSelecionado.nome}
-- Plano: ${JSON.stringify(context.data.planoSelecionado, null, 2)}
+  try {
+    console.log(`[${userId}] Iniciando fechamento do acordo...`);
 
-Acordo sendo finalizado...`;
+    // Adiciona mensagem de aguardo ao contexto
+    addToContext(userId, "user", "Finalizando o acordo, por favor aguarde...");
 
-  addToContext(userId, "user", resumoAcordo);
+    // Chama a API de registro do acordo - aguarda até 10 segundos
+    const acordoResponse = await postAcordoMaster(
+      context.data.documento,
+      context.data.planoSelecionado
+    );
 
-  setState(userId, FLOW_STATES.FINALIZADO);
+    console.log(`[${userId}] Resposta da API:`, acordoResponse);
 
-  return {
-    success: true,
-    acordo: {
-      documento: context.data.documento,
-      credor: context.data.credorSelecionado,
-      plano: context.data.planoSelecionado,
-    },
-  };
+    // Formata a resposta da API para apresentar ao usuário
+    const mensagemSucesso = formatarRespostaAcordo(acordoResponse);
+
+    // Adiciona a resposta formatada ao contexto
+    addToContext(userId, "user", mensagemSucesso);
+
+    // Atualiza o contexto com os dados do acordo finalizado
+    updateContext(userId, {
+      data: {
+        ...context.data,
+        acordoFinalizado: acordoResponse,
+      },
+    });
+
+    setState(userId, FLOW_STATES.FINALIZADO);
+
+    return {
+      success: true,
+      accord: {
+        documento: context.data.documento,
+        credor: context.data.credorSelecionado,
+        plano: context.data.planoSelecionado,
+        resposta: acordoResponse,
+      },
+    };
+  } catch (error) {
+    console.error(`[${userId}] Erro ao fechar acordo:`, error.message);
+
+    addToContext(
+      userId,
+      "user",
+      `Desculpe, ocorreu um erro ao finalizar o acordo: ${error.message}. Tente novamente mais tarde.`
+    );
+
+    return {
+      success: false,
+      message: `Erro ao processar acordo: ${error.message}`,
+    };
+  }
+}
+
+/**
+ * Formata a resposta do API de registro do acordo para exibição ao usuário
+ * @param {object} acordoData - Dados retornados pela API
+ * @returns {string} - Mensagem formatada
+ */
+function formatarRespostaAcordo(acordoData) {
+  if (!acordoData) {
+    return "Acordo finalizado com sucesso!";
+  }
+
+  let mensagem = "✅ Acordo Finalizado com Sucesso!\n\n";
+
+  // Processa campos comuns da resposta
+  if (acordoData.id || acordoData.ID) {
+    mensagem += `ID do Acordo: ${acordoData.id || acordoData.ID}\n`;
+  }
+
+  if (acordoData.numero_acordo || acordoData.numeroAcordo) {
+    mensagem += `Número do Acordo: ${
+      acordoData.numero_acordo || acordoData.numeroAcordo
+    }\n`;
+  }
+
+  if (acordoData.status) {
+    mensagem += `Status: ${acordoData.status}\n`;
+  }
+
+  if (acordoData.data_criacao || acordoData.dataCriacao) {
+    mensagem += `Data de Criação: ${
+      acordoData.data_criacao || acordoData.dataCriacao
+    }\n`;
+  }
+
+  if (acordoData.proxima_parcela || acordoData.proximaParcela) {
+    mensagem += `Próxima Parcela: ${
+      acordoData.proxima_parcela || acordoData.proximaParcela
+    }\n`;
+  }
+
+  if (acordoData.valor_primeira_parcela || acordoData.valorPrimeiraParcela) {
+    mensagem += `Valor da Primeira Parcela: R$ ${
+      acordoData.valor_primeira_parcela || acordoData.valorPrimeiraParcela
+    }\n`;
+  }
+
+  if (acordoData.quantidade_parcelas || acordoData.quantidadeParcelas) {
+    mensagem += `Total de Parcelas: ${
+      acordoData.quantidade_parcelas || acordoData.quantidadeParcelas
+    }\n`;
+  }
+
+  if (acordoData.valor_total || acordoData.valorTotal) {
+    mensagem += `Valor Total: R$ ${
+      acordoData.valor_total || acordoData.valorTotal
+    }\n`;
+  }
+
+  if (acordoData.desconto || acordoData.descontoPercentual) {
+    mensagem += `Desconto Concedido: ${
+      acordoData.desconto || acordoData.descontoPercentual
+    }\n`;
+  }
+
+  mensagem +=
+    "\n🎉 Seu acordo foi registrado com sucesso! Acompanhe as datas das parcelas.";
+
+  return mensagem;
 }
 
 /**
