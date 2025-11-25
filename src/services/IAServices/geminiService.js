@@ -423,15 +423,20 @@ async function processAcordoFechamento(userId) {
       )
     );
 
+    // Preferir usar o iddevedor do credor selecionado; fallback para documento
+    const idDevedor = context.data.credorSelecionado?.iddevedor;
+
     console.log(
       "DADOS ACORDO MASTER -",
-      userId,
+      "iddevedor:",
+      idDevedor,
+      "plano:",
       context.data.planoSelecionado.plano
     );
 
-    // Executa a API de registro com tratamento de timeout
+    // Executa a API de registro com tratamento de timeout (primeiro argumento: iddevedor)
     const acordoResponse = await Promise.race([
-      postAcordoMaster(userId, context.data.planoSelecionado.plano),
+      postAcordoMaster(idDevedor, context.data.planoSelecionado.plano),
       timeoutPromise,
     ]);
 
