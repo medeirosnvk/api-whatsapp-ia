@@ -409,7 +409,13 @@ async function processPlanoSelection(userId, selectedIndex) {
 
   setState(userId, FLOW_STATES.AGUARDANDO_FECHAMENTO_ACORDO);
 
-  return { success: true, planoSelecionado };
+  // Após selecionar o plano, iniciamos imediatamente o fechamento do acordo
+  // para que o próximo retorno enviado ao usuário seja a resposta do registro
+  // (`postAcordoMaster`). processAcordoFechamento adiciona a mensagem ao
+  // contexto e retorna o objeto com a mensagem formatada.
+  const fechamentoResult = await processAcordoFechamento(userId);
+
+  return fechamentoResult;
 }
 
 /**
@@ -493,6 +499,7 @@ async function processAcordoFechamento(userId) {
 
     return {
       success: true,
+      mensagem: mensagemSucesso,
       acordo: {
         documento: context.data.documento,
         credor: context.data.credorSelecionado,
@@ -683,6 +690,7 @@ async function sendToGemini(userId, userMessage) {
     currentState === FLOW_STATES.AGUARDANDO_SELECAO_CREDOR
       ? findCredorIndexById(userMessage, listaCredores)
       : -1;
+  let actionResult = null;
 
   // Processa seleção de credor por ID (iddevedor) - prioridade 1
   if (
@@ -692,7 +700,7 @@ async function sendToGemini(userId, userMessage) {
     console.log(
       `[${userId}] Selecionando credor por ID: índice ${credorIndexFromId}`
     );
-    await processCredorSelection(userId, credorIndexFromId + 1);
+    actionResult = await processCredorSelection(userId, credorIndexFromId + 1);
     currentState = getState(userId);
   }
   // Processa seleção de credor por número da lista - prioridade 2
@@ -703,7 +711,7 @@ async function sendToGemini(userId, userMessage) {
     console.log(
       `[${userId}] Selecionando credor por número: ${selectedNumber}`
     );
-    await processCredorSelection(userId, selectedNumber);
+    actionResult = await processCredorSelection(userId, selectedNumber);
     currentState = getState(userId);
   }
   // Processa seleção de plano por número
@@ -712,13 +720,13 @@ async function sendToGemini(userId, userMessage) {
     currentState === FLOW_STATES.AGUARDANDO_SELECAO_PLANO
   ) {
     console.log(`[${userId}] Selecionando plano: ${selectedNumber}`);
-    await processPlanoSelection(userId, selectedNumber);
+    actionResult = await processPlanoSelection(userId, selectedNumber);
     currentState = getState(userId);
   }
   // Processa fechamento de acordo
   else if (currentState === FLOW_STATES.AGUARDANDO_FECHAMENTO_ACORDO) {
     console.log(`[${userId}] Processando fechamento do acordo...`);
-    await processAcordoFechamento(userId);
+    actionResult = await processAcordoFechamento(userId);
     currentState = getState(userId);
   }
 
@@ -729,6 +737,12 @@ async function sendToGemini(userId, userMessage) {
   // Adiciona a mensagem do usuário ao contexto
   // (o processamento de documento/credor adiciona informações adicionais, mas a mensagem original também é importante)
   addToContext(userId, "user", userMessage);
+
+  // Se alguma ação retornou uma mensagem pronta (ex: resposta de fechamento de acordo),
+  // retornamos essa mensagem imediatamente ao usuário e pulamos a chamada ao Gemini.
+  if (actionResult && actionResult.mensagem) {
+    return { message: actionResult.mensagem, state: getState(userId) };
+  }
 
   // Monta o payload para o Gemini
   const contents = [];
