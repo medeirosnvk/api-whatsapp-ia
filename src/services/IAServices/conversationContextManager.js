@@ -31,6 +31,7 @@ function getOrCreateContext(userId) {
         credorSelecionado: null,
         ofertas: [],
         documento: null,
+        acordoFinalizado: null, // armazena dados do acordo finalizado quando houver
       },
       flags: {
         saudacaoEnviada: false,
@@ -94,7 +95,11 @@ function cleanupOldContexts(maxAgeHours = 24) {
 
     if (age > maxAge) {
       conversationContexts.delete(userId);
-      console.log(`Contexto removido para usuário ${userId} (inativo há ${Math.round(age / (60 * 60 * 1000))} horas)`);
+      console.log(
+        `Contexto removido para usuário ${userId} (inativo há ${Math.round(
+          age / (60 * 60 * 1000)
+        )} horas)`
+      );
     }
   }
 }
@@ -118,6 +123,31 @@ function setState(userId, state) {
   updateContext(userId, { state });
 }
 
+/**
+ * Marca o acordo como finalizado no contexto do usuário
+ * @param {string} userId
+ * @param {object} acordoData
+ */
+function setAgreementFinalized(userId, acordoData) {
+  const context = getOrCreateContext(userId);
+  updateContext(userId, {
+    data: {
+      ...context.data,
+      acordoFinalizado: acordoData || true,
+    },
+  });
+}
+
+/**
+ * Retorna true se o usuário já finalizou um acordo
+ * @param {string} userId
+ * @returns {boolean}
+ */
+function isAgreementFinalized(userId) {
+  const context = getOrCreateContext(userId);
+  return Boolean(context.data && context.data.acordoFinalizado);
+}
+
 module.exports = {
   getOrCreateContext,
   updateContext,
@@ -126,6 +156,7 @@ module.exports = {
   cleanupOldContexts,
   getState,
   setState,
+  setAgreementFinalized,
+  isAgreementFinalized,
   FLOW_STATES,
 };
-

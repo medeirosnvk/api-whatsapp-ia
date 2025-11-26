@@ -9,6 +9,8 @@ const {
   getOrCreateContext,
   updateContext,
   addToContext,
+  setAgreementFinalized,
+  isAgreementFinalized,
   setState,
   getState,
   FLOW_STATES,
@@ -487,13 +489,8 @@ async function processAcordoFechamento(userId) {
     // Adiciona a resposta formatada ao contexto
     addToContext(userId, "user", mensagemSucesso);
 
-    // Atualiza o contexto com os dados do acordo finalizado
-    updateContext(userId, {
-      data: {
-        ...context.data,
-        acordoFinalizado: acordoResponse,
-      },
-    });
+    // Atualiza o contexto com os dados do acordo finalizado (registro específico)
+    setAgreementFinalized(userId, acordoResponse);
 
     setState(userId, FLOW_STATES.FINALIZADO);
 
@@ -663,6 +660,31 @@ async function sendToGemini(userId, userMessage) {
 
   console.log(`[${userId}] Estado atual: ${currentState}`);
   console.log(`[${userId}] Mensagem recebida: ${userMessage}`);
+
+  // Se já finalizou um acordo, não permitir iniciar nova negociação
+  try {
+    const acordoFechado = isAgreementFinalized(userId);
+    const negotiationStates = [
+      FLOW_STATES.AGUARDANDO_DOCUMENTO,
+      FLOW_STATES.AGUARDANDO_SELECAO_CREDOR,
+      FLOW_STATES.AGUARDANDO_SELECAO_PLANO,
+      FLOW_STATES.AGUARDANDO_FECHAMENTO_ACORDO,
+    ];
+
+    if (
+      acordoFechado &&
+      (detectNegotiationIntent(userMessage) ||
+        negotiationStates.includes(currentState))
+    ) {
+      const blockMsg =
+        "Percebi que você já finalizou um acordo. Não iniciarei nova negociação. Se quiser falar sobre outro assunto, posso ajudar normalmente (ex: dúvidas sobre o acordo, pagamentos ou informações gerais).";
+      // registra a resposta no contexto e retorna imediatamente
+      addToContext(userId, "model", blockMsg);
+      return { message: blockMsg, state: getState(userId) };
+    }
+  } catch (e) {
+    console.warn(`[${userId}] Erro ao checar acordo finalizado:`, e.message);
+  }
 
   // Se é o primeiro contato, move para aguardando documento
   if (currentState === FLOW_STATES.INICIAL) {
