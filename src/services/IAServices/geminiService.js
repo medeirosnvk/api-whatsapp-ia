@@ -481,10 +481,8 @@ async function processAcordoFechamento(userId) {
 
     console.log(`[${userId}] Resposta da API:`, acordoResponse);
 
-    // Formata a resposta da API para apresentar ao usuário
+    // Formata a resposta da API para apresentar ao usuário (mantemos no contexto)
     const mensagemSucesso = formatarRespostaAcordo(acordoResponse);
-
-    // Adiciona a resposta formatada ao contexto
     addToContext(userId, "user", mensagemSucesso);
 
     // Atualiza o contexto com os dados do acordo finalizado
@@ -497,16 +495,36 @@ async function processAcordoFechamento(userId) {
 
     setState(userId, FLOW_STATES.FINALIZADO);
 
-    return {
-      success: true,
-      mensagem: mensagemSucesso,
-      acordo: {
-        documento: context.data.documento,
-        credor: context.data.credorSelecionado,
-        plano: context.data.planoSelecionado,
-        resposta: acordoResponse,
-      },
+    // Extrai campos solicitados para retorno enxuto
+    const primeira =
+      acordoResponse.primeiraEtapaResponse ||
+      acordoResponse.primeiraEtapa ||
+      acordoResponse;
+    const terceira =
+      acordoResponse.terceiraEtapaResponse ||
+      acordoResponse.terceiraEtapa ||
+      {};
+
+    const retornoEnxuto = {
+      planoSelecionado: context.data.planoSelecionado || null,
+      valorTotal:
+        primeira?.total_geral ||
+        primeira?.valor_total ||
+        primeira?.total ||
+        null,
+      valorParcela:
+        primeira?.valor_parcela ||
+        primeira?.valorParcela ||
+        primeira?.valor ||
+        null,
+      detalhesParcelas:
+        primeira?.vencimentosParcelas || primeira?.vencimentos_parcelas || [],
+      pixCopiaECola:
+        terceira?.pixCopiaECola || terceira?.pix_copia_e_cola || null,
+      urlBoleto: terceira?.urlBoleto || terceira?.url_boleto || null,
     };
+
+    return { success: true, ...retornoEnxuto };
   } catch (error) {
     console.error(`[${userId}] Erro ao fechar acordo:`, error.message);
 
@@ -738,10 +756,28 @@ async function sendToGemini(userId, userMessage) {
   // (o processamento de documento/credor adiciona informações adicionais, mas a mensagem original também é importante)
   addToContext(userId, "user", userMessage);
 
-  // Se alguma ação retornou uma mensagem pronta (ex: resposta de fechamento de acordo),
-  // retornamos essa mensagem imediatamente ao usuário e pulamos a chamada ao Gemini.
-  if (actionResult && actionResult.mensagem) {
-    return { message: actionResult.mensagem, state: getState(userId) };
+  // Se alguma ação retornou um resultado (ex: resposta de fechamento de acordo),
+  // retornamos imediatamente ao usuário e pulamos a chamada ao Gemini.
+  if (actionResult) {
+    // Compatibilidade: se a ação já retornou a mensagem formatada
+    if (actionResult.mensagem) {
+      return { message: actionResult.mensagem, state: getState(userId) };
+    }
+
+    // Novo formato enxuto: quando processAcordoFechamento retorna os campos
+    // solicitados (planoSelecionado, valorTotal, valorParcela, detalhesParcelas,
+    // pixCopiaECola, urlBoleto), retornamos esses dados como JSON string.
+    const hasRetornoEnxuto =
+      actionResult.planoSelecionado !== undefined ||
+      actionResult.valorTotal !== undefined ||
+      actionResult.valorParcela !== undefined ||
+      actionResult.detalhesParcelas !== undefined ||
+      actionResult.pixCopiaECola !== undefined ||
+      actionResult.urlBoleto !== undefined;
+
+    if (hasRetornoEnxuto) {
+      return { message: JSON.stringify(actionResult), state: getState(userId) };
+    }
   }
 
   // Monta o payload para o Gemini
