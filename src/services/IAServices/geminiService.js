@@ -539,13 +539,13 @@ function formatarRespostaAcordo(acordoData) {
   if (acordoData.primeiraEtapaResponse) {
     const primeira = acordoData.primeiraEtapaResponse;
 
-    if (primeira.iddevedor) {
-      mensagem += `ID Devedor: ${primeira.iddevedor}\n`;
-    }
+    // if (primeira.iddevedor) {
+    //   mensagem += `ID Devedor: ${primeira.iddevedor}\n`;
+    // }
 
-    if (primeira.idcredor) {
-      mensagem += `ID Credor: ${primeira.idcredor}\n`;
-    }
+    // if (primeira.idcredor) {
+    //   mensagem += `ID Credor: ${primeira.idcredor}\n`;
+    // }
 
     if (primeira.plano) {
       mensagem += `Plano Selecionado: ${primeira.plano}\n`;
@@ -600,9 +600,9 @@ function formatarRespostaAcordo(acordoData) {
       mensagem += `📄 Link do Boleto:\n${terceira.urlBoleto}\n\n`;
     }
 
-    if (terceira.urlQrCode) {
-      mensagem += `📱 QR Code PIX:\n${terceira.urlQrCode}\n`;
-    }
+    // if (terceira.urlQrCode) {
+    //   mensagem += `📱 QR Code PIX:\n${terceira.urlQrCode}\n`;
+    // }
   }
 
   // Fallback para campos legados (compatibilidade com APIs antigas)
