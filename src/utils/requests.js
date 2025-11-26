@@ -14,11 +14,6 @@ const getOfertasCredor = async (iddevedor) => {
   return response.data;
 };
 
-/**
- * Gera token de autenticação usando credenciais do .env
- * Espera que existam as variáveis: COBRANCE_USERNAME e COBRANCE_PASSWORD
- * Retorna a string do token (conforme resposta da API)
- */
 const gerarToken = async () => {
   const url = `https://api.cobrance.online:3030/gerar-token`;
   const username = process.env.COBRANCE_USERNAME;
@@ -42,9 +37,6 @@ const gerarToken = async () => {
   return token;
 };
 
-/**
- * Executa o registro do acordo (rota protegida) usando Bearer token gerado
- */
 const postAcordoMaster = async (iddevedor, plano) => {
   const url = `https://api.cobrance.online:3030/registro-master-acordo`;
 

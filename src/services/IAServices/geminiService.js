@@ -357,10 +357,43 @@ async function processPlanoSelection(userId, selectedIndex) {
 
   const planoSelecionado = context.data.ofertas[index];
 
+  // Constrói as datas de vencimento das parcelas para o plano selecionado.
+  // Regra: sempre que o usuário selecionar um plano com 2 ou mais parcelas,
+  // a primeira parcela deve usar a `data_vencimento` do `plano 1`, a segunda
+  // usar a `data_vencimento` do `plano 2`, e assim por diante.
+  const ofertas = context.data.ofertas || [];
+  // Determina quantas parcelas o plano selecionado representa.
+  const parcelasCount =
+    Number(planoSelecionado?.plano) ||
+    Number(planoSelecionado?.quantidadeParcelas) ||
+    index + 1;
+
+  const vencimentosParcelas = [];
+  for (let i = 0; i < parcelasCount; i++) {
+    const ofertaReferencia = ofertas[i];
+    const vencimento = ofertaReferencia?.data_vencimento || null;
+    vencimentosParcelas.push({
+      vencimento,
+      // Usa o valor da parcela do plano selecionado como valor atual da parcela
+      valorParcelaAtual: String(
+        planoSelecionado?.valor_parcela || planoSelecionado?.valor || "0"
+      ),
+    });
+  }
+
+  // Atualiza o objeto do plano selecionado com as datas calculadas
+  const planoSelecionadoEnriquecido = {
+    ...planoSelecionado,
+    vencimentosParcelas,
+    ultimaDataVencimento: vencimentosParcelas.length
+      ? vencimentosParcelas[vencimentosParcelas.length - 1].vencimento
+      : planoSelecionado?.data_ultima_parcela || null,
+  };
+
   updateContext(userId, {
     data: {
       ...context.data,
-      planoSelecionado,
+      planoSelecionado: planoSelecionadoEnriquecido,
     },
   });
 
@@ -368,7 +401,7 @@ async function processPlanoSelection(userId, selectedIndex) {
     userId,
     "user",
     `Plano escolhido (${index + 1}): ${JSON.stringify(
-      planoSelecionado,
+      planoSelecionadoEnriquecido,
       null,
       2
     )}`
